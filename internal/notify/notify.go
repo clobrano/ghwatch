@@ -148,6 +148,8 @@ func Format(t model.Transition, it model.Item) Notification {
 		n.Urgent = true
 	case model.EventCheckStarted:
 		n.Title = fmt.Sprintf("%s %s started", model.Running.Icon(), t.Check)
+	case model.EventCheckFinished:
+		n.Title = fmt.Sprintf("%s %s %s", t.To.Icon(), t.Check, t.To)
 	case model.EventAllPassed:
 		n.Title = fmt.Sprintf("%s all checks passed", model.Passed.Icon())
 	case model.EventRestarted:

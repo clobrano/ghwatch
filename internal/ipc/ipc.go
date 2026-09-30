@@ -26,9 +26,11 @@ const (
 	OpUnwatch = "unwatch" // ID: item ID
 	OpPoll    = "poll"    // poll now
 	OpAlerts  = "alerts"  // ID, On: per-item notifications
-	OpEvents  = "events"  // Events: enabled event types
-	OpMute    = "mute"    // On: global mute
-	OpRetest  = "retest"  // ID: re-trigger failed CI
+	// OpCheckAlerts sets notifications for one check (job): ID, Check, On.
+	OpCheckAlerts = "check_alerts"
+	OpEvents      = "events" // Events: enabled event types
+	OpMute        = "mute"   // On: global mute
+	OpRetest      = "retest" // ID: re-trigger failed CI
 )
 
 // Message types.
@@ -42,6 +44,7 @@ const (
 type Command struct {
 	Op     string                   `json:"op"`
 	ID     string                   `json:"id,omitempty"`
+	Check  string                   `json:"check,omitempty"`
 	On     *bool                    `json:"on,omitempty"`
 	Events map[model.EventType]bool `json:"events,omitempty"`
 }

@@ -90,6 +90,7 @@ last poll failed.
 | `o` | open the PR page |
 | `y` | copy the selected check's URL |
 | `n` | toggle notifications for the current PR |
+| `b` | toggle notifications for the selected job |
 | `N` | notification settings: event types and global mute |
 | `a` | add a PR |
 | `d` | unwatch the current PR (in every client) |
@@ -110,10 +111,19 @@ failing optional check does not turn the PR red.
 
 ### Notifications
 
-Notifications are off for every PR until you press `n` on its tab. The
+Notifications are off for every PR until you press `n` on its tab, or `b`
+on one of its jobs. The
 setting is shared by all clients and survives restarts. `N` chooses which
 events notify: check failed, all checks passed, check started, CI restarted
-by a new push, merged or closed. All of them are enabled at first. Each
+by a new push, merged or closed. All of them are enabled at first.
+
+To follow a single job, select it and press `b`. The job shows a `⍾` after
+its name, and the tab and header show a bell too. That job then notifies
+whenever its state changes (started, failed, passed, skipped, cancelled),
+even with the PR's alerts off. The bell stays on the job across new pushes,
+since a re-run job keeps its name. When an event is wanted both for the
+PR and for the job, it still sends one notification. The global mute
+silences job bells too. Each
 event sends exactly one notification, from the daemon, however many clients
 are open. After a `/retest`, a notification is sent for each job as it
 fails.

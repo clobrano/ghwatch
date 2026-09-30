@@ -259,6 +259,7 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 		return nil
 	}
 	cur.Alerts = prev.Alerts
+	cur.WatchedChecks = prev.WatchedChecks
 	var prevp *model.Item
 	if prev.HeadSHA != "" {
 		prevp = &prev
@@ -285,12 +286,16 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 	cur.UpdatedAt = now
 	d.snap.Items[idx] = cur
 
-	if !cur.Alerts || d.snap.Settings.Mute {
+	if d.snap.Settings.Mute || !cur.Alerts && len(cur.WatchedChecks) == 0 {
 		return nil
 	}
 	var notes []notify.Notification
 	for _, t := range model.Diff(prevp, cur) {
-		if d.snap.Settings.Events[t.Type] {
+		// One notification per event, whether it is wanted for the item,
+		// for the watched check, or both.
+		forItem := cur.Alerts && d.snap.Settings.Events[t.Type]
+		forCheck := t.Check != "" && cur.Watching(t.Check)
+		if forItem || forCheck {
 			notes = append(notes, notify.Format(t, cur))
 		}
 	}
@@ -453,6 +458,29 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 				d.publishLocked()
 				return fmt.Sprintf("alerts %s for %s", onOff(*cmd.On), cmd.ID), nil
 			}
+		}
+		return "", fmt.Errorf("not watching %s", cmd.ID)
+	case ipc.OpCheckAlerts:
+		if cmd.On == nil || cmd.Check == "" {
+			return "", errors.New("check_alerts: missing check or on")
+		}
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		for i := range d.snap.Items {
+			it := &d.snap.Items[i]
+			if it.ID != cmd.ID {
+				continue
+			}
+			watched := slices.DeleteFunc(slices.Clone(it.WatchedChecks), func(n string) bool { return n == cmd.Check })
+			if *cmd.On {
+				watched = append(watched, cmd.Check)
+			}
+			if len(watched) == 0 {
+				watched = nil
+			}
+			it.WatchedChecks = watched
+			d.publishLocked()
+			return fmt.Sprintf("alerts %s for job %s", onOff(*cmd.On), cmd.Check), nil
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)
 	case ipc.OpEvents:

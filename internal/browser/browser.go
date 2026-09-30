@@ -2,6 +2,7 @@
 package browser
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -15,6 +16,36 @@ import (
 // $BROWSER may be a colon-separated list; the first that starts wins.
 // The browser is started detached and not waited for.
 func Open(command, url string) error {
+	cmd, _, err := start(command, url)
+	if err != nil {
+		return err
+	}
+	go cmd.Wait()
+	return nil
+}
+
+// OpenWait is Open, but waits for the browser command to exit and reports
+// its failure, with what it printed. Run it in the background: a browser
+// started directly (not through xdg-open) may run for a long time.
+func OpenWait(command, url string) error {
+	cmd, stderr, err := start(command, url)
+	if err != nil {
+		return err
+	}
+	if err := cmd.Wait(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if i := strings.IndexByte(msg, '\n'); i >= 0 {
+			msg = msg[:i]
+		}
+		if msg != "" {
+			return fmt.Errorf("%s: %v: %s", cmd.Args[0], err, msg)
+		}
+		return fmt.Errorf("%s: %v", cmd.Args[0], err)
+	}
+	return nil
+}
+
+func start(command, url string) (*exec.Cmd, *bytes.Buffer, error) {
 	var candidates []string
 	if command != "" {
 		candidates = append(candidates, command)
@@ -42,15 +73,15 @@ func Open(command, url string) error {
 			args = append(args, url)
 		}
 		cmd := exec.Command(fields[0], args...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
+		stderr := &bytes.Buffer{}
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, stderr
 		if err := cmd.Start(); err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		go cmd.Wait()
-		return nil
+		return cmd, stderr, nil
 	}
-	return fmt.Errorf("cannot open %s: %w", url, errors.Join(errs...))
+	return nil, nil, fmt.Errorf("cannot open %s: %w", url, errors.Join(errs...))
 }
 
 // Copy puts text on the clipboard with wl-copy, xclip or xsel. When none

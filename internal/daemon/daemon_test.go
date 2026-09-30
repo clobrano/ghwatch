@@ -293,3 +293,73 @@ func TestBackoff(t *testing.T) {
 		t.Errorf("30 failures: %s", got)
 	}
 }
+
+func TestJobAlerts(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	os.WriteFile(paths.Watchlist(), []byte("o/r#1\n"), 0o600)
+	fake := &fakePR{items: map[string]model.Item{}}
+	set := func(sha string, unit, e2e model.State) {
+		fake.set(model.Item{ID: "pr:o/r#1", Repo: "o/r", Number: 1, HeadSHA: sha, Lifecycle: model.Open,
+			Checks: []model.Check{check("unit", unit), check("e2e", e2e)}})
+	}
+	set("a", model.Running, model.Running)
+	rec := &recorder{}
+	_, cancel, done := startDaemon(t, paths, fake, rec)
+	defer func() { cancel(); <-done }()
+	c := dial(t, paths)
+	waitFor(t, c, "first poll", func(s *model.Snapshot) bool { return s.Items[0].HeadSHA == "a" })
+
+	ctx := context.Background()
+	on := true
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpCheckAlerts, ID: "pr:o/r#1", Check: "e2e", On: &on}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, c, "watched job", func(s *model.Snapshot) bool { return s.Items[0].Watching("e2e") && !s.Items[0].Alerts })
+
+	poll := func(what string, ok func(*model.Snapshot) bool) {
+		t.Helper()
+		if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpPoll}); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, c, what, ok)
+	}
+	// The PR has alerts off: an unwatched job failing is silent, the
+	// watched one passing notifies.
+	set("a", model.Failed, model.Passed)
+	poll("results", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Passed })
+	notes := rec.all()
+	if len(notes) != 1 || notes[0].Title != "✓ e2e passed" || notes[0].URL != "https://prow/e2e" {
+		t.Fatalf("notifications = %+v, want one for e2e passing", notes)
+	}
+
+	// The job stays watched across a new push, and with PR alerts on too,
+	// its failure still sends a single notification.
+	c.Do(ctx, ipc.Command{Op: ipc.OpAlerts, ID: "pr:o/r#1", On: &on})
+	set("b", model.Running, model.Running)
+	poll("new head", func(s *model.Snapshot) bool { return s.Items[0].HeadSHA == "b" && s.Items[0].Alerts })
+	set("b", model.Running, model.Failed)
+	poll("e2e failure", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Failed })
+	notes = rec.all()
+	var e2eFailed int
+	for _, n := range notes {
+		if n.Event.Type == model.EventCheckFailed && n.Event.Check == "e2e" {
+			e2eFailed++
+		}
+	}
+	if e2eFailed != 1 {
+		t.Errorf("e2e failure notified %d times: %+v", e2eFailed, notes)
+	}
+
+	// Global mute silences watched jobs too; turning the bell off removes it.
+	c.Do(ctx, ipc.Command{Op: ipc.OpMute, On: &on})
+	before := len(rec.all())
+	set("b", model.Running, model.Running)
+	poll("rerun", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Running && s.Settings.Mute })
+	if len(rec.all()) != before {
+		t.Errorf("muted, but notified: %+v", rec.all()[before:])
+	}
+	off := false
+	c.Do(ctx, ipc.Command{Op: ipc.OpCheckAlerts, ID: "pr:o/r#1", Check: "e2e", On: &off})
+	waitFor(t, c, "bell off", func(s *model.Snapshot) bool { return len(s.Items[0].WatchedChecks) == 0 })
+}

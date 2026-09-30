@@ -298,6 +298,11 @@ func (m *Model) keyNormal(k string) {
 			on := !it.Alerts
 			m.send(ipc.Command{Op: ipc.OpAlerts, ID: it.ID, On: &on})
 		}
+	case "b":
+		if it, c := m.selected(); c != nil {
+			on := !it.Watching(c.Name)
+			m.send(ipc.Command{Op: ipc.OpCheckAlerts, ID: it.ID, Check: c.Name, On: &on})
+		}
 	case "N":
 		m.mode, m.evSel = modeEvents, 0
 	case "a":
@@ -334,7 +339,9 @@ func (m *Model) open(url string) {
 	}
 	if err := m.backend.Open(url); err != nil {
 		m.setFlash(err.Error(), true)
+		return
 	}
+	m.setFlash("opening "+url, false)
 }
 
 // keyInput edits the input line; submit is called on enter.

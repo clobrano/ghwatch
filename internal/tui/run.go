@@ -69,7 +69,16 @@ func (b *backend) Send(cmd ipc.Command) {
 	}()
 }
 
-func (b *backend) Open(url string) error { return browser.Open(b.opts.Config.Browser, url) }
+// Open starts the browser in the background; a failure of the browser
+// command shows up as an error message.
+func (b *backend) Open(url string) error {
+	go func() {
+		if err := browser.OpenWait(b.opts.Config.Browser, url); err != nil {
+			b.events <- resultMsg{err: err}
+		}
+	}()
+	return nil
+}
 
 func (b *backend) Copy(text string) error { return browser.Copy(text, b.tty) }
 

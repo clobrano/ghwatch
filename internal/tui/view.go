@@ -96,7 +96,7 @@ func (m *Model) tabLabels() []line {
 			name += " " + s
 		}
 		l := line{{" ", ""}, icon(st), {" " + name, ""}}
-		if it.Alerts {
+		if it.Alerts || len(it.WatchedChecks) > 0 {
 			l = append(l, seg{" ⍾", sCyan})
 		}
 		l = append(l, seg{" ", ""})
@@ -226,6 +226,13 @@ func (m *Model) header(w int) []line {
 	if it.Alerts {
 		add(seg{"alerts on", sCyan})
 	}
+	if n := len(it.WatchedChecks); n > 0 {
+		jobs := "jobs"
+		if n == 1 {
+			jobs = "job"
+		}
+		add(seg{fmt.Sprintf("⍾ %d %s", n, jobs), sCyan})
+	}
 	if it.Error != "" {
 		add(seg{"⚠ " + it.Error, sRed})
 	}
@@ -345,9 +352,15 @@ func (m *Model) checksBody(w, rows int) []line {
 		if r.check == sel {
 			marker, nameStyle = seg{"▸", sCyan + sBold}, sBold
 		}
-		l := line{marker, icon(c.State), {" " + padRight(c.Name, nameW), nameStyle},
-			{" " + padLeft(m.checkTime(c), timeW), stateStyle(c.State)},
-			{"  " + padRight(c.Source, srcW), sDim}}
+		// The name cell ends with a bell when the job has its own alerts.
+		name := line{{" " + padRight(c.Name, nameW), nameStyle}}
+		if it.Watching(c.Name) {
+			n := truncate(c.Name, nameW-2)
+			name = line{{" " + n, nameStyle}, {" ⍾", sCyan}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
+		}
+		l := append(line{marker, icon(c.State)}, name...)
+		l = append(l, seg{" " + padLeft(m.checkTime(c), timeW), stateStyle(c.State)},
+			seg{"  " + padRight(c.Source, srcW), sDim})
 		if anyRequired && !c.Required {
 			l = append(l, seg{" opt", sDim})
 		}
@@ -380,7 +393,8 @@ func (m *Model) findBody(w, rows int) []line {
 }
 
 func (m *Model) eventsBody() []line {
-	out := []line{{{" Notify on these events, for items with alerts on (n):", sBold}}, {}}
+	out := []line{{{" Notify on these events, for items with alerts on (n):", sBold}},
+		{{" (a job with its own bell (b) notifies on every change of its state)", sDim}}, {}}
 	var st model.Settings
 	if m.snap != nil {
 		st = m.snap.Settings
@@ -413,6 +427,7 @@ var helpRows = [][2]string{
 	{"o", "open the PR page"},
 	{"y", "copy the selected check's URL"},
 	{"n", "toggle notifications for this item"},
+	{"b", "toggle notifications for the selected job"},
 	{"N", "notification settings: event types, global mute"},
 	{"a", "add a PR"},
 	{"d", "unwatch this PR (in every client)"},
@@ -481,7 +496,7 @@ func (m *Model) footer(w int) line {
 	case m.snap != nil && m.snap.Stale && m.snap.Error != "":
 		left = line{{" ⚠ " + m.snap.Error, sYellow}}
 	default:
-		left = line{{" h/l tab · j/k check · enter job · o PR · n alerts · N events · ?", sDim}}
+		left = line{{" h/l tab · j/k check · enter job · o PR · n/b alerts · N events · ?", sDim}}
 	}
 	return spread(left, right, w)
 }

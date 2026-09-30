@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -335,5 +336,49 @@ func TestCancelledGroupAtBottom(t *testing.T) {
 		if !strings.HasPrefix(rows[5+i], prefix) {
 			t.Errorf("row %d = %q, want prefix %q", 5+i, rows[5+i], prefix)
 		}
+	}
+}
+
+func TestJobBell(t *testing.T) {
+	m, be := newModel()
+	keys(m, "j", "b") // e2e-metal-ipi
+	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpCheckAlerts || be.sent[0].Check != "e2e-metal-ipi" || !*be.sent[0].On {
+		t.Fatalf("b sent %+v", be.sent)
+	}
+
+	// Once the daemon confirms, the job shows a bell, as does its tab even
+	// with PR alerts off.
+	s := snapshot()
+	s.Items[0].Alerts = false
+	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
+	m.SetSnapshot(s)
+	rows := m.View(90, 16)
+	if !strings.HasPrefix(rows[8], "▸● e2e-metal-ipi ⍾ ") || !strings.Contains(rows[8], "running 23m") {
+		t.Errorf("watched job row = %q", rows[8])
+	}
+	if strings.Contains(rows[6], "⍾") {
+		t.Errorf("unwatched job has a bell: %q", rows[6])
+	}
+	if !strings.Contains(rows[0], "#123 lease-race ⍾") || !strings.Contains(rows[3], "⍾ 1 job") || strings.Contains(rows[3], "alerts on") {
+		t.Errorf("tab = %q, header = %q", rows[0], rows[3])
+	}
+	keys(m, "b")
+	if !*be.sent[0].On || *be.sent[1].On {
+		t.Errorf("second b should turn the bell off: %+v", be.sent[1])
+	}
+}
+
+func TestOpenShowsFeedback(t *testing.T) {
+	m, be := newModel()
+	keys(m, kEnter)
+	if len(be.opened) != 1 || be.opened[0] != "u/e2e" {
+		t.Fatalf("opened %v", be.opened)
+	}
+	if !strings.Contains(m.View(90, 16)[15], "opening u/e2e") {
+		t.Errorf("footer = %q", m.View(90, 16)[15])
+	}
+	m.Result("", errors.New("xdg-open: exit status 4"))
+	if !strings.Contains(m.View(90, 16)[15], "xdg-open: exit status 4") {
+		t.Errorf("browser failure not shown: %q", m.View(90, 16)[15])
 	}
 }

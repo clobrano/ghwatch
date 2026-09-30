@@ -62,7 +62,8 @@ func TestDiff(t *testing.T) {
 		{"started", ptr(item("a", chk("x", Pending))), item("a", chk("x", Running)), []EventType{EventCheckStarted}},
 		{"new check running", ptr(item("a")), item("a", chk("x", Running)), []EventType{EventCheckStarted}},
 		{"failed", ptr(item("a", chk("x", Running), chk("y", Running))), item("a", chk("x", Failed), chk("y", Running)), []EventType{EventCheckFailed}},
-		{"all passed", ptr(item("a", chk("x", Passed), chk("y", Running))), item("a", chk("x", Passed), chk("y", Passed)), []EventType{EventAllPassed}},
+		{"all passed", ptr(item("a", chk("x", Passed), chk("y", Running))), item("a", chk("x", Passed), chk("y", Passed)), []EventType{EventCheckFinished, EventAllPassed}},
+		{"cancelled", ptr(item("a", chk("x", Running), chk("y", Running))), item("a", chk("x", Cancelled), chk("y", Running)), []EventType{EventCheckFinished}},
 		{"rerun fails again", ptr(item("a", chk("x", Running))), item("a", chk("x", Failed)), []EventType{EventCheckFailed}},
 		{"new push", ptr(item("a", chk("x", Failed))), item("b", chk("x", Pending)), []EventType{EventRestarted}},
 	}
