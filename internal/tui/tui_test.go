@@ -387,7 +387,7 @@ func TestTitleBar(t *testing.T) {
 	m := NewModel(&fakeBackend{})
 	m.now = func() time.Time { return now }
 	m.Color = false
-	if got := m.View(80, 10)[0]; !strings.HasPrefix(got, " ghwatch") || !strings.Contains(got, "waiting for the daemon") {
+	if got := m.View(80, 10)[0]; !strings.HasPrefix(got, " GHWATCH  GitHub PR watcher") || !strings.Contains(got, "waiting for the daemon") {
 		t.Errorf("before any state: %q", got)
 	}
 
@@ -397,7 +397,7 @@ func TestTitleBar(t *testing.T) {
 	s.PolledAt = now.Add(-42 * time.Second)
 	m.SetSnapshot(s)
 	got := m.View(100, 16)[0]
-	for _, want := range []string{" ghwatch  3 PRs ✗1 ●1 ⮌1 · " + bellIcon + " 2", "polled 42s ago "} {
+	for _, want := range []string{" GHWATCH  GitHub PR watcher · 3 PRs ✗1 ●1 ⮌1 · " + bellIcon + " 2", "polled 42s ago "} {
 		if !strings.Contains(got, want) {
 			t.Errorf("title = %q, lacks %q", got, want)
 		}
@@ -411,7 +411,7 @@ func TestTitleBar(t *testing.T) {
 	s.Items = s.Items[:1]
 	m.SetSnapshot(s)
 	got = m.View(100, 16)[0]
-	for _, want := range []string{" 1 PR ✗1", "muted", "last poll 42s ago "} {
+	for _, want := range []string{"watcher · 1 PR ✗1", "muted", "last poll 42s ago "} {
 		if !strings.Contains(got, want) {
 			t.Errorf("title = %q, lacks %q", got, want)
 		}

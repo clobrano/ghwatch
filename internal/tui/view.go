@@ -8,6 +8,12 @@ import (
 	"github.com/clobrano/ghwatch/internal/model"
 )
 
+// appTitle is the app name as shown in the title bar.
+const appTitle = "GHWATCH"
+
+// appTagline follows the name in the title bar.
+const appTagline = "GitHub PR watcher"
+
 // bellIcon marks alerts: the Nerd Fonts codicon bell (nf-cod-bell).
 const bellIcon = "\ueaa2"
 
@@ -74,7 +80,7 @@ func (m *Model) lines(w, h int) []line {
 // titleBar is the top line: the app name, how many PRs are watched and
 // in which state, how many have alerts, and when GitHub was last polled.
 func (m *Model) titleBar(w int) line {
-	left := line{{" ghwatch", sBold + sCyan}}
+	left := line{{" " + appTitle, sBold + sCyan}, {"  " + appTagline, sDim}}
 	if m.snap == nil {
 		return spread(left, line{{"waiting for the daemon… ", sDim}}, w)
 	}
@@ -83,7 +89,7 @@ func (m *Model) titleBar(w int) line {
 	if len(items) == 1 {
 		prs = "PR"
 	}
-	left = append(left, seg{fmt.Sprintf("  %d %s", len(items), prs), ""})
+	left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%d %s", len(items), prs), ""})
 	counts := map[model.State]int{}
 	alerts := 0
 	for _, it := range items {
@@ -199,7 +205,7 @@ func isNumeric(s string) bool {
 func (m *Model) tabBar(w int) line {
 	labels := m.tabLabels()
 	if len(labels) == 0 {
-		return line{{" ghwatch", sBold}, {" · no watched items", sDim}}
+		return line{{" no watched items", sDim}}
 	}
 	sep := seg{"│", sDim}
 	width := func(from, to int) int { // cells for labels[from..to]
