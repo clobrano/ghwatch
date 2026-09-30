@@ -57,10 +57,17 @@ ghwatch status                                      # one line, e.g. "PR ‚óè3 ‚ú
 ghwatch status -json                                # the full state snapshot
 ```
 
-The TUI starts the daemon in the background (`ghwatch -serve`) if none is
-running. You can also run the daemon yourself, in a tmux pane or under a
-service manager. Only one daemon runs per user. A second one detects the
-first and exits.
+The TUI starts the daemon in the background if none is running. A daemon
+started this way exits 10 seconds after its last TUI quits. So quitting
+every TUI stops it, and after a rebuild the next TUI starts the new binary.
+While no daemon runs, nothing is polled, no notifications are sent, and
+`ghwatch status` shows the state as stale.
+
+To get notifications and a live status line with no TUI open, run the
+daemon yourself, in a tmux pane or under a service manager:
+`ghwatch -serve` keeps running until you stop it with Ctrl-C or SIGTERM.
+Add `-idle-exit 10m` to make it exit after that long without clients. Only
+one daemon runs per user. A second one detects the first and exits.
 
 `add` and `rm` go through the daemon when it is running, so every open TUI
 updates at once. Otherwise they edit the watchlist file directly.

@@ -38,6 +38,14 @@ can be swapped out.
 
 ## Other choices
 
+- **Daemon lifetime**: a daemon auto-started by a TUI exits 10 seconds
+  after its last client disconnects (`-idle-exit 10s`). This keeps a
+  stale daemon from outliving a rebuild. It narrows goal 4
+  (notifications without the TUI open) to daemons started by hand:
+  `ghwatch -serve` without `-idle-exit` runs until stopped. The tmux
+  status line reads the state file and holds no connection, so it does
+  not keep the daemon alive.
+
 - **Dismissing a finished PR** is unwatching it (`d`). A merged or closed
   PR stays on the list with its final state until then, and is no longer
   polled.

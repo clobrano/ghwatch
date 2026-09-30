@@ -58,6 +58,7 @@ func main() {
 	log.SetPrefix("ghwatch: ")
 	serve := flag.Bool("serve", false, "run the daemon in the foreground")
 	interval := flag.Duration("interval", 0, "poll interval for -serve (default from config, 60s)")
+	idleExit := flag.Duration("idle-exit", 0, "with -serve: exit after this long without clients (0: never)")
 	flag.Usage = func() {
 		fmt.Fprint(flag.CommandLine.Output(), usage)
 		flag.PrintDefaults()
@@ -76,7 +77,7 @@ func main() {
 	defer stop()
 
 	if *serve {
-		if err := runDaemon(ctx, paths, cfg); err != nil {
+		if err := runDaemon(ctx, paths, cfg, *idleExit); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -111,13 +112,14 @@ func main() {
 	}
 }
 
-func runDaemon(ctx context.Context, paths config.Paths, cfg config.Config) error {
+func runDaemon(ctx context.Context, paths config.Paths, cfg config.Config, idleExit time.Duration) error {
 	d := &daemon.Daemon{
-		Paths:  paths,
-		Config: cfg,
-		Kinds:  kinds(),
-		GH:     github.New(),
-		Log:    log.New(os.Stderr, "ghwatch: ", log.LstdFlags),
+		Paths:    paths,
+		Config:   cfg,
+		IdleExit: idleExit,
+		Kinds:    kinds(),
+		GH:       github.New(),
+		Log:      log.New(os.Stderr, "ghwatch: ", log.LstdFlags),
 	}
 	switch cfg.Notifier {
 	case "desktop", "":

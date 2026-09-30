@@ -363,3 +363,50 @@ func TestJobAlerts(t *testing.T) {
 	c.Do(ctx, ipc.Command{Op: ipc.OpCheckAlerts, ID: "pr:o/r#1", Check: "e2e", On: &off})
 	waitFor(t, c, "bell off", func(s *model.Snapshot) bool { return len(s.Items[0].WatchedChecks) == 0 })
 }
+
+func TestIdleExit(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	fake := &fakePR{items: map[string]model.Item{}}
+	d := &Daemon{
+		Paths: paths, Config: config.Config{Interval: time.Hour}, Kinds: kind.NewRegistry(fake),
+		Log: log.New(io.Discard, "", 0), WatchEvery: 10 * time.Millisecond, IdleExit: 300 * time.Millisecond,
+	}
+	done := make(chan error, 1)
+	go func() { done <- d.Run(context.Background()) }()
+	var c *ipc.Client
+	for deadline := time.Now().Add(5 * time.Second); c == nil; {
+		c, _ = ipc.Dial(paths.Socket())
+		if time.Now().After(deadline) {
+			t.Fatal("daemon did not start")
+		}
+	}
+
+	// A connected client keeps it alive well past the idle time.
+	select {
+	case err := <-done:
+		t.Fatalf("exited with a client connected: %v", err)
+	case <-time.After(3 * d.IdleExit):
+	}
+
+	// The last client leaving starts the countdown.
+	c.Close()
+	start := time.Now()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if waited := time.Since(start); waited < d.IdleExit-50*time.Millisecond {
+			t.Errorf("exited %s after the last client, before the %s grace period", waited, d.IdleExit)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon did not exit without clients")
+	}
+	if Running(paths.Lock()) {
+		t.Error("lock still held")
+	}
+	if _, err := os.Stat(paths.Socket()); !os.IsNotExist(err) {
+		t.Errorf("socket left behind: %v", err)
+	}
+}

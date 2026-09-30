@@ -9,7 +9,8 @@ import (
 )
 
 // Spawn starts `ghwatch -serve` in the background, detached from the
-// caller's terminal and session, logging to the state directory.
+// caller's terminal and session, logging to the state directory. The
+// daemon exits AutoIdleExit after its last client disconnects.
 func Spawn(paths config.Paths) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -23,7 +24,7 @@ func Spawn(paths config.Paths) error {
 		return err
 	}
 	defer logf.Close()
-	cmd := exec.Command(exe, "-serve")
+	cmd := exec.Command(exe, "-serve", "-idle-exit", AutoIdleExit.String())
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
