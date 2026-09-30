@@ -24,6 +24,7 @@ func TestStatus(t *testing.T) {
 	snap := &model.Snapshot{Schema: 1, GeneratedAt: time.Now(), Items: []model.Item{
 		item(model.Running, model.Open), item(model.Running, model.Open), item(model.Pending, model.Open),
 		item(model.Passed, model.Open), item(model.Failed, model.Open), item(model.Failed, model.LifeMerged),
+		{Lifecycle: model.Open, MergeQueue: &model.MergeQueue{State: "queued"}, Checks: []model.Check{{Name: "x", State: model.Passed}}},
 	}}
 	if err := daemon.WriteSnapshot(paths.Snapshot(), snap); err != nil {
 		t.Fatal(err)
@@ -33,7 +34,7 @@ func TestStatus(t *testing.T) {
 	if err := cmdStatus(paths, cfg, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); got != "PR ●3 ✓1 ✗1 ⚠\n" {
+	if got := out.String(); got != "PR ●3 ✓1 ⧗1 ✗1 ⚠\n" {
 		t.Errorf("status = %q", got)
 	}
 
@@ -46,7 +47,7 @@ func TestStatus(t *testing.T) {
 	if err := cmdStatus(paths, cfg, []string{"-format", "{{.Total}} {{.Merged}} {{.Stale}}"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); got != "6 1 false\n" {
+	if got := out.String(); got != "7 1 false\n" {
 		t.Errorf("custom status = %q", got)
 	}
 

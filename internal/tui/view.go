@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/clobrano/ghwatch/internal/model"
 )
@@ -27,6 +28,8 @@ func stateStyle(s model.State) string {
 		return sYellow
 	case model.Merged:
 		return sMagenta
+	case model.Queued:
+		return sBlue
 	case model.Pending, model.Skipped, model.Cancelled, model.Closed:
 		return sDim
 	}
@@ -105,7 +108,7 @@ func (m *Model) titleBar(w int) line {
 			alerts++
 		}
 	}
-	for _, st := range []model.State{model.Failed, model.Running, model.Passed, model.Merged} {
+	for _, st := range []model.State{model.Failed, model.Running, model.Passed, model.Queued, model.Merged} {
 		if counts[st] > 0 {
 			left = append(left, seg{" ", ""}, seg{fmt.Sprintf("%s%d", st.Icon(), counts[st]), stateStyle(st)})
 		}
@@ -271,6 +274,10 @@ func (m *Model) header(w int) []line {
 	case it.HeadSHA == "":
 		add(seg{"waiting for the first poll…", sDim})
 	default:
+		// The merge queue comes first: it is what matters most while queued.
+		if q := it.MergeQueue; q != nil {
+			add(m.queueSeg(q))
+		}
 		add(seg{"head " + short(it.HeadSHA), ""})
 		if !it.PushedAt.IsZero() {
 			add(seg{"pushed " + human(m.now().Sub(it.PushedAt)) + " ago", ""})
@@ -283,6 +290,7 @@ func (m *Model) header(w int) []line {
 		if it.Lifecycle.Finished() {
 			add(seg{string(it.Lifecycle), stateStyle(model.ItemState(*it)) + sBold})
 		}
+
 	}
 	if it.Alerts {
 		add(seg{"alerts on", sCyan})
@@ -301,6 +309,65 @@ func (m *Model) header(w int) []line {
 		l2 = append(line{{" ", ""}}, l2...)
 	}
 	return []line{l1, l2}
+}
+
+// queueSeg describes a merge queue entry, e.g. "queued for merge, 2nd in
+// line, 12m ago, ~8m left".
+func (m *Model) queueSeg(q *model.MergeQueue) seg {
+	what, style := "queued for merge", stateStyle(model.Queued)+sBold
+	switch q.State {
+	case "awaiting_checks":
+		what = "in merge queue, checks running"
+	case "mergeable":
+		what = "in merge queue, ready to merge"
+	case "unmergeable":
+		what, style = "in merge queue, unmergeable", sRed+sBold
+	case "locked":
+		what = "in merge queue, queue locked"
+	}
+	if q.Position > 0 {
+		what += ", " + ordinal(q.Position) + " in line"
+	}
+	if !q.EnqueuedAt.IsZero() {
+		what += ", " + human(m.now().Sub(q.EnqueuedAt)) + " ago"
+	}
+	if q.ETASeconds > 0 {
+		what += ", ~" + human(time.Duration(q.ETASeconds)*time.Second) + " left"
+	}
+	return seg{what, style}
+}
+
+// queueStatus is the short state of a merge queue entry for the list row.
+func queueStatus(q *model.MergeQueue) (string, string) {
+	switch q.State {
+	case "awaiting_checks":
+		return "checks running", stateStyle(model.Queued)
+	case "mergeable":
+		return "ready to merge", stateStyle(model.Queued)
+	case "unmergeable":
+		return "unmergeable", sRed
+	case "locked":
+		return "queue locked", stateStyle(model.Queued)
+	}
+	if q.Position > 0 {
+		return ordinal(q.Position) + " in line", stateStyle(model.Queued)
+	}
+	return "queued", stateStyle(model.Queued)
+}
+
+func ordinal(n int) string {
+	suffix := "th"
+	if n%100 < 11 || n%100 > 13 {
+		switch n % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
+	}
+	return strconv.Itoa(n) + suffix
 }
 
 func short(sha string) string {
@@ -337,7 +404,8 @@ func (m *Model) checksBody(w, rows int) []line {
 	if it == nil {
 		return nil
 	}
-	if len(it.Checks) == 0 {
+	checks := listed(it)
+	if len(checks) == 0 {
 		if it.HeadSHA == "" {
 			return nil
 		}
@@ -347,7 +415,6 @@ func (m *Model) checksBody(w, rows int) []line {
 	for _, c := range it.Checks {
 		anyRequired = anyRequired || c.Required
 	}
-	checks := grouped(it.Checks)
 	sel := m.selIndex(it.ID, checks)
 
 	// One header row per non-empty group, then its checks.
@@ -398,7 +465,7 @@ func (m *Model) checksBody(w, rows int) []line {
 		optW = 4
 	}
 	nameW := max(w-3-1-timeW-2-srcW-optW, 8)
-	groupStyle := [...]string{sRed, sYellow, sGreen, sDim}
+	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sDim}
 	var out []line
 	for _, r := range list[top:] {
 		if len(out) >= rows {
@@ -419,10 +486,14 @@ func (m *Model) checksBody(w, rows int) []line {
 			n := truncate(c.Name, nameW-2)
 			name = line{{" " + n, nameStyle}, {" " + bellIcon, sCyan}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
 		}
+		when, whenStyle := m.checkTime(c), stateStyle(c.State)
+		if c.State == model.Queued {
+			when, whenStyle = queueStatus(it.MergeQueue)
+		}
 		l := append(line{marker, icon(c.State)}, name...)
-		l = append(l, seg{" " + padLeft(m.checkTime(c), timeW), stateStyle(c.State)},
+		l = append(l, seg{" " + padLeft(when, timeW), whenStyle},
 			seg{"  " + padRight(c.Source, srcW), sDim})
-		if anyRequired && !c.Required {
+		if anyRequired && !c.Required && c.State != model.Queued {
 			l = append(l, seg{" opt", sDim})
 		}
 		out = append(out, l)

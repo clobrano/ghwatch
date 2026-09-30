@@ -206,3 +206,44 @@ func TestRetest(t *testing.T) {
 		t.Errorf("info = %q", info)
 	}
 }
+
+func TestMergeQueueEntry(t *testing.T) {
+	if q, _ := buildQuery([]string{"pr:o/r#1"}); !strings.Contains(q, "mergeQueueEntry { state position enqueuedAt estimatedTimeToMerge mergeQueue { url } }") {
+		t.Errorf("query does not ask for the merge queue entry:\n%s", q)
+	}
+	decode := func(js string) model.Item {
+		var p prNode
+		if err := json.Unmarshal([]byte(js), &p); err != nil {
+			t.Fatal(err)
+		}
+		return p.toItem("pr:o/r#1", "o/r")
+	}
+	it := decode(`{"number":1,"state":"OPEN","headRefOid":"abc","baseRefName":"main",
+	  "mergeQueueEntry":{"state":"AWAITING_CHECKS","position":2,"enqueuedAt":"2026-09-30T10:00:00Z","estimatedTimeToMerge":480},
+	  "commits":{"nodes":[{"commit":{"oid":"abc","statusCheckRollup":{"contexts":{"nodes":[
+	    {"__typename":"CheckRun","name":"unit","status":"COMPLETED","conclusion":"SUCCESS","databaseId":1,"checkSuite":{"app":{"slug":"github-actions"}}}]}}}}]}}`)
+	q := it.MergeQueue
+	if q == nil || q.State != "awaiting_checks" || q.Position != 2 || q.ETASeconds != 480 || q.EnqueuedAt.IsZero() {
+		t.Fatalf("merge queue = %+v", q)
+	}
+	if it.State != model.Queued {
+		t.Errorf("state = %s, want queued", it.State)
+	}
+	if q.URL != "https://github.com/o/r/queue/main" {
+		t.Errorf("queue URL = %q, want the one built from the base branch", q.URL)
+	}
+	it = decode(`{"number":1,"state":"OPEN","headRefOid":"abc","baseRefName":"main",
+	  "mergeQueueEntry":{"state":"QUEUED","position":1,"mergeQueue":{"url":"https://github.com/o/r/queue/release-4.18"}}}`)
+	if it.MergeQueue == nil || it.MergeQueue.URL != "https://github.com/o/r/queue/release-4.18" {
+		t.Errorf("queue URL from GitHub: %+v", it.MergeQueue)
+	}
+
+	it = decode(`{"number":1,"state":"OPEN","headRefOid":"abc","mergeQueueEntry":null}`)
+	if it.MergeQueue != nil {
+		t.Errorf("not queued, got %+v", it.MergeQueue)
+	}
+	it = decode(`{"number":1,"state":"MERGED","merged":true,"headRefOid":"abc","mergeQueueEntry":{"state":"MERGEABLE","position":1}}`)
+	if it.MergeQueue != nil || it.State != model.Merged {
+		t.Errorf("merged PR: queue %+v, state %s", it.MergeQueue, it.State)
+	}
+}

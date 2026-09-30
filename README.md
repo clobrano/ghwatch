@@ -119,7 +119,15 @@ Tabs keep the order in which the PRs were added. Checks are split into
 groups, each under a header with its count: **Failed**, then **Running**
 (including pending), then **Passed** (including skipped), then
 **Cancelled** at the bottom. Within a group, checks stay in the order they were
-first seen. When a check changes group, the selection follows it. A tab label starts with the PR's state icon, and a
+first seen. When a check changes group, the selection follows it.
+
+A PR waiting in GitHub's merge queue shows `⧗` on its tab. Its header
+starts with the queue state, its place in line, how long it has waited
+and GitHub's estimate of the time left, e.g. `in merge queue, checks
+running, 2nd in line, 12m ago, ~8m left`. The queue is also the first row of
+the list, under a "Merge queue" header: select it and press `enter` to
+open the queue page on GitHub. That row is not a check: it does not count
+in "done", and has no bell of its own (`n` alerts cover the merge). A tab label starts with the PR's state icon, and a
 bell marks PRs with alerts on. A PR from a repository other than the most
 common one gets a short repository prefix (`osac#58`). Checks marked `opt`
 are not required by branch protection. When a PR has required checks, a

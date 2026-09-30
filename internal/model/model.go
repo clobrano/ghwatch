@@ -29,6 +29,8 @@ const (
 	// is finished.
 	Merged State = "merged"
 	Closed State = "closed"
+	// Queued is an open item waiting in a merge queue.
+	Queued State = "queued"
 )
 
 // Icon returns the single-glyph representation of a state.
@@ -50,6 +52,8 @@ func (s State) Icon() string {
 		return "⮌"
 	case Closed:
 		return "⊗"
+	case Queued:
+		return "⧗"
 	}
 	return "?"
 }
@@ -109,6 +113,8 @@ type Item struct {
 	// kept across new pushes, since re-run jobs keep their names.
 	WatchedChecks []string `json:"watched_checks,omitempty"`
 	Checks        []Check  `json:"checks"`
+	// MergeQueue is set while the item waits in a merge queue.
+	MergeQueue *MergeQueue `json:"merge_queue,omitempty"`
 	// Error is set when the last fetch of this item failed; the rest of
 	// the item is then the last known state.
 	Error     string    `json:"error,omitempty"`
@@ -123,6 +129,21 @@ func (it Item) Watching(name string) bool {
 		}
 	}
 	return false
+}
+
+// MergeQueue is an item's entry in a merge queue.
+type MergeQueue struct {
+	// State is GitHub's state of the entry, lower case: queued,
+	// awaiting_checks, mergeable, unmergeable or locked.
+	State string `json:"state"`
+	// Position is the place in line, 1 being next to merge.
+	Position   int       `json:"position"`
+	EnqueuedAt time.Time `json:"enqueued_at"`
+	// URL is the merge queue's page.
+	URL string `json:"url,omitempty"`
+	// ETASeconds is GitHub's estimate of the time left until merge, in
+	// seconds; 0 when GitHub gives none.
+	ETASeconds int `json:"eta_seconds,omitempty"`
 }
 
 // EventType is a kind of notification-worthy event.
@@ -237,13 +258,17 @@ func Aggregate(checks []Check) State {
 }
 
 // ItemState returns the state to display for an item: its final lifecycle
-// state when finished, otherwise the aggregate of its checks.
+// state when finished, Queued while it waits in a merge queue, otherwise
+// the aggregate of its checks.
 func ItemState(it Item) State {
 	switch it.Lifecycle {
 	case LifeMerged:
 		return Merged
 	case LifeClosed:
 		return Closed
+	}
+	if it.MergeQueue != nil {
+		return Queued
 	}
 	return Aggregate(it.Checks)
 }

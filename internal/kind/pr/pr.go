@@ -174,8 +174,9 @@ func buildQuery(ids []string) (string, error) {
 }
 
 const prSelection = `
-      number title url state merged headRefName headRefOid
+      number title url state merged headRefName headRefOid baseRefName
       author { login }
+      mergeQueueEntry { state position enqueuedAt estimatedTimeToMerge mergeQueue { url } }
       commits(last: 1) { nodes { commit {
         oid committedDate
         statusCheckRollup { contexts(first: 100) { nodes {
@@ -206,9 +207,19 @@ type prNode struct {
 	Merged      bool   `json:"merged"`
 	HeadRefName string `json:"headRefName"`
 	HeadRefOid  string `json:"headRefOid"`
+	BaseRefName string `json:"baseRefName"`
 	Author      *struct {
 		Login string `json:"login"`
 	} `json:"author"`
+	MergeQueueEntry *struct {
+		State                string    `json:"state"`
+		Position             int       `json:"position"`
+		EnqueuedAt           time.Time `json:"enqueuedAt"`
+		EstimatedTimeToMerge *int      `json:"estimatedTimeToMerge"` // seconds
+		MergeQueue           *struct {
+			URL string `json:"url"`
+		} `json:"mergeQueue"`
+	} `json:"mergeQueueEntry"`
 	Commits struct {
 		Nodes []struct {
 			Commit struct {
@@ -237,6 +248,17 @@ func (p *prNode) toItem(id, repo string) model.Item {
 		it.Lifecycle = model.LifeMerged
 	case p.State == "CLOSED":
 		it.Lifecycle = model.LifeClosed
+	}
+	if q := p.MergeQueueEntry; q != nil && it.Lifecycle == model.Open {
+		it.MergeQueue = &model.MergeQueue{State: strings.ToLower(q.State), Position: q.Position, EnqueuedAt: q.EnqueuedAt}
+		if q.MergeQueue != nil && q.MergeQueue.URL != "" {
+			it.MergeQueue.URL = q.MergeQueue.URL
+		} else if p.BaseRefName != "" {
+			it.MergeQueue.URL = fmt.Sprintf("https://github.com/%s/queue/%s", repo, p.BaseRefName)
+		}
+		if q.EstimatedTimeToMerge != nil {
+			it.MergeQueue.ETASeconds = *q.EstimatedTimeToMerge
+		}
 	}
 	if len(p.Commits.Nodes) > 0 {
 		c := p.Commits.Nodes[0].Commit

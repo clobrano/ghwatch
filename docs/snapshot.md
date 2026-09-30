@@ -31,7 +31,14 @@ changing the meaning of a field bumps `schema`.
     "head_sha": "a1b2c3d…",    // empty until the first successful fetch
     "pushed_at": "…",          // commit date of the head
     "lifecycle": "open",       // open | merged | closed
-    "state": "failed",         // aggregate, or merged/closed once finished
+    "state": "failed",         // aggregate; queued while in a merge queue; merged/closed once finished
+    "merge_queue": {           // only while the PR waits in a merge queue
+      "state": "awaiting_checks", // queued | awaiting_checks | mergeable | unmergeable | locked
+      "position": 2,           // 1 = next to merge
+      "url": "https://github.com/org/repo/queue/main", // the queue page
+      "enqueued_at": "…",
+      "eta_seconds": 480       // GitHub's estimate, when it gives one
+    },
     "alerts": true,            // notifications on for this item (default false)
     "watched_checks": ["e2e"], // jobs with their own notifications (omitted when none)
     "error": "",               // last fetch of this item failed

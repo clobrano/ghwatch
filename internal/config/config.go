@@ -67,7 +67,7 @@ func (p Paths) Ensure() error {
 }
 
 // DefaultStatusTemplate renders e.g. "PR ●3 ✓5 ✗1".
-const DefaultStatusTemplate = `PR {{if .Running}}●{{.Running}} {{end}}{{if .Passed}}✓{{.Passed}} {{end}}{{if .Failed}}✗{{.Failed}} {{end}}{{if .Stale}}⚠{{end}}`
+const DefaultStatusTemplate = `PR {{if .Running}}●{{.Running}} {{end}}{{if .Passed}}✓{{.Passed}} {{end}}{{if .Queued}}⧗{{.Queued}} {{end}}{{if .Failed}}✗{{.Failed}} {{end}}{{if .Stale}}⚠{{end}}`
 
 // Config is the content of config.toml.
 type Config struct {

@@ -123,3 +123,14 @@ func TestMergeOrder(t *testing.T) {
 }
 
 func ptr(i Item) *Item { return &i }
+
+func TestItemStateQueued(t *testing.T) {
+	it := Item{Lifecycle: Open, MergeQueue: &MergeQueue{State: "queued", Position: 1}, Checks: []Check{chk("a", Passed)}}
+	if got := ItemState(it); got != Queued {
+		t.Errorf("ItemState = %s, want queued", got)
+	}
+	it.MergeQueue = nil
+	if got := ItemState(it); got != Passed {
+		t.Errorf("after leaving the queue: %s, want passed", got)
+	}
+}

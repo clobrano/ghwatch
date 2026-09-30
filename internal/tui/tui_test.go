@@ -423,3 +423,76 @@ func TestTitleBar(t *testing.T) {
 		t.Errorf("title = %q", got)
 	}
 }
+
+func TestMergeQueue(t *testing.T) {
+	m, _ := newModel()
+	s := snapshot()
+	s.Items[1].MergeQueue = &model.MergeQueue{State: "awaiting_checks", Position: 2, EnqueuedAt: now.Add(-12 * time.Minute), ETASeconds: 480}
+	s.Items[1].Checks[0].State = model.Passed
+	m.SetSnapshot(s)
+	keys(m, "2")
+	rows := m.View(130, 16)
+	if !strings.Contains(rows[0], "3 PRs ✗1 ⧗1 ⮌1") {
+		t.Errorf("title = %q", rows[0])
+	}
+	if !strings.Contains(rows[1], "⧗ #131 sbd-timeout") {
+		t.Errorf("tabs = %q", rows[1])
+	}
+	if !strings.Contains(rows[4], "in merge queue, checks running, 2nd in line, 12m ago, ~8m left") {
+		t.Errorf("header = %q", rows[4])
+	}
+
+	s.Items[1].MergeQueue = &model.MergeQueue{State: "queued", Position: 1}
+	m.SetSnapshot(s)
+	if got := m.View(130, 16)[4]; !strings.Contains(got, "queued for merge, 1st in line") {
+		t.Errorf("header = %q", got)
+	}
+	for n, want := range map[int]string{1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 11: "11th", 12: "12th", 13: "13th", 21: "21st", 22: "22nd"} {
+		if got := ordinal(n); got != want {
+			t.Errorf("ordinal(%d) = %s, want %s", n, got, want)
+		}
+	}
+}
+
+func TestMergeQueueRow(t *testing.T) {
+	m, be := newModel()
+	s := snapshot()
+	s.Items[1].MergeQueue = &model.MergeQueue{State: "awaiting_checks", Position: 2, URL: "https://github.com/org/repo/queue/main"}
+	s.Items[1].Checks[0].State = model.Passed
+	s.Items[1].Checks[0].URL = "u/unit"
+	m.SetSnapshot(s)
+	keys(m, "2")
+	rows := m.View(100, 16)
+	want := []string{" Merge queue · 1", "▸⧗ merge queue", " Passed · 1", " ✓ unit"}
+	for i, prefix := range want {
+		if !strings.HasPrefix(rows[6+i], prefix) {
+			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
+		}
+	}
+	if !strings.Contains(rows[7], "checks running  GitHub") {
+		t.Errorf("queue row = %q", rows[7])
+	}
+	if !strings.Contains(rows[4], "1/1 done") {
+		t.Errorf("the queue row counts as a check: %q", rows[4])
+	}
+
+	// enter opens the queue; b does not set a bell on it.
+	keys(m, kEnter, "b")
+	if len(be.opened) != 1 || be.opened[0] != "https://github.com/org/repo/queue/main" {
+		t.Errorf("opened %v", be.opened)
+	}
+	if len(be.sent) != 0 || !strings.Contains(m.View(100, 16)[15], "no bell of its own") {
+		t.Errorf("b on the queue row sent %+v", be.sent)
+	}
+	keys(m, "j", kEnter)
+	if len(be.opened) != 2 || be.opened[1] != "u/unit" {
+		t.Errorf("j then enter opened %v", be.opened)
+	}
+
+	// Once the PR leaves the queue, the row goes away.
+	s.Items[1].MergeQueue = nil
+	m.SetSnapshot(s)
+	if got := strings.Join(m.View(100, 16), "\n"); strings.Contains(got, "merge queue") {
+		t.Errorf("queue row still shown:\n%s", got)
+	}
+}
