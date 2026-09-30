@@ -279,15 +279,49 @@ func (m *Model) checksBody(w, rows int) []line {
 	for _, c := range it.Checks {
 		anyRequired = anyRequired || c.Required
 	}
-	sel := min(max(m.sel[it.ID], 0), len(it.Checks)-1)
+	checks := grouped(it.Checks)
+	sel := m.selIndex(it.ID, checks)
+
+	// One header row per non-empty group, then its checks.
+	type row struct {
+		check int // index in checks, or -1 for a group header
+		group int
+		count int
+	}
+	var list []row
+	selRow := 0
+	for i, c := range checks {
+		g := checkGroup(c.State)
+		if i == 0 || checkGroup(checks[i-1].State) != g {
+			list = append(list, row{check: -1, group: g})
+		}
+		if i == sel {
+			selRow = len(list)
+		}
+		list = append(list, row{check: i, group: g})
+	}
+	for i := range list {
+		if list[i].check < 0 {
+			for j := i + 1; j < len(list) && list[j].check >= 0; j++ {
+				list[i].count++
+			}
+		}
+	}
+
+	// Scroll so the selected check is visible, with its group header when
+	// it is the first of its group.
 	top := m.top[it.ID]
-	if sel < top {
-		top = sel
+	first := selRow
+	if first > 0 && list[first-1].check < 0 {
+		first--
 	}
-	if sel >= top+rows {
-		top = sel - rows + 1
+	if first < top {
+		top = first
 	}
-	top = max(min(top, len(it.Checks)-rows), 0)
+	if selRow >= top+rows {
+		top = selRow - rows + 1
+	}
+	top = max(min(top, len(list)-rows), 0)
 	m.top[it.ID] = top
 
 	const timeW, srcW = 14, 8
@@ -296,11 +330,19 @@ func (m *Model) checksBody(w, rows int) []line {
 		optW = 4
 	}
 	nameW := max(w-3-1-timeW-2-srcW-optW, 8)
+	groupStyle := [...]string{sRed, sYellow, sGreen, sDim}
 	var out []line
-	for i := top; i < len(it.Checks) && len(out) < rows; i++ {
-		c := it.Checks[i]
+	for _, r := range list[top:] {
+		if len(out) >= rows {
+			break
+		}
+		if r.check < 0 {
+			out = append(out, line{{" " + groupNames[r.group], groupStyle[r.group] + sBold}, {" · " + strconv.Itoa(r.count), sDim}})
+			continue
+		}
+		c := checks[r.check]
 		marker, nameStyle := seg{" ", ""}, ""
-		if i == sel {
+		if r.check == sel {
 			marker, nameStyle = seg{"▸", sCyan + sBold}, sBold
 		}
 		l := line{marker, icon(c.State), {" " + padRight(c.Name, nameW), nameStyle},

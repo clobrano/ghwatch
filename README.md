@@ -13,12 +13,15 @@ notification when a check changes state. Notifications are opt-in per PR.
  org/repo#123  Fix lease renewal race                    @clobrano
  head a1b2c3d · pushed 52m ago · 5/7 done · 1 failing · alerts on
 ─────────────────────────────────────────────────────────────────────
- ✓ lint                              2m    Actions
- ✓ unit                              6m    Actions
+ Failed · 1
  ✗ e2e-aws-ovn                      41m    Prow
+ Running · 3
 ▸● e2e-metal-ipi                running 23m Prow
  ● ci/prow/images               running 5m  Prow
  ◌ tide                             pending Prow     opt
+ Passed · 2
+ ✓ lint                              2m    Actions
+ ✓ unit                              6m    Actions
 ─────────────────────────────────────────────────────────────────────
  h/l tab · j/k check · enter job · o PR · n alerts · N events · ?   connected
 ```
@@ -95,8 +98,11 @@ last poll failed.
 | `?` | help |
 | `q` | quit this TUI (the daemon keeps running) |
 
-Tabs keep the order in which the PRs were added. Checks stay in the order
-they were first seen. A tab label starts with the PR's state icon, and a
+Tabs keep the order in which the PRs were added. Checks are split into
+groups, each under a header with its count: **Failed**, then **Running**
+(including pending), then **Passed** (including skipped), then
+**Cancelled** at the bottom. Within a group, checks stay in the order they were
+first seen. When a check changes group, the selection follows it. A tab label starts with the PR's state icon, and a
 `⍾` marks PRs with alerts on. A PR from a repository other than the most
 common one gets a short repository prefix (`osac#58`). Checks marked `opt`
 are not required by branch protection. When a PR has required checks, a
