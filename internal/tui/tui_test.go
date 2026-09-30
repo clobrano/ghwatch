@@ -114,11 +114,11 @@ func TestTabOverflowKeepsActiveVisible(t *testing.T) {
 
 func TestNavigationAndActions(t *testing.T) {
 	m, be := newModel()
-	keys(m, "j", kEnter, "o", "y")
+	keys(m, "j", kEnter, "o", "Y", "y")
 	if !reflect.DeepEqual(be.opened, []string{"u/metal", "https://github.com/org/repo/pull/123"}) {
 		t.Errorf("opened = %v", be.opened)
 	}
-	if !reflect.DeepEqual(be.copied, []string{"u/metal"}) {
+	if !reflect.DeepEqual(be.copied, []string{"u/metal", "https://github.com/org/repo/pull/123"}) {
 		t.Errorf("copied = %v", be.copied)
 	}
 	keys(m, "G")
@@ -528,5 +528,13 @@ func TestMergeQueueRow(t *testing.T) {
 	m.SetSnapshot(s)
 	if got := strings.Join(m.View(100, 16), "\n"); strings.Contains(got, "merge queue") {
 		t.Errorf("queue row still shown:\n%s", got)
+	}
+}
+
+func TestCopyWithoutLink(t *testing.T) {
+	m, be := newModel()
+	keys(m, "G", "k", "Y") // tide: pending, no URL
+	if len(be.copied) != 0 || !strings.Contains(m.View(90, 16)[15], "no link to copy") {
+		t.Errorf("copied %v, footer %q", be.copied, m.View(90, 16)[15])
 	}
 }

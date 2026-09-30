@@ -562,7 +562,7 @@ var helpRows = [][2]string{
 	{"j / k, gg / G", "move between checks"},
 	{"enter", "open the selected check's job page"},
 	{"o", "open the PR page"},
-	{"y", "copy the selected check's URL"},
+	{"y / Y", "copy the PR's / the selected job's URL"},
 	{"n", "toggle notifications for this item"},
 	{"b", "toggle notifications for the selected job"},
 	{"N", "notification settings: event types, global mute"},

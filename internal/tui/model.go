@@ -311,12 +311,12 @@ func (m *Model) keyNormal(k string) {
 			m.open(it.URL)
 		}
 	case "y":
-		if _, c := m.selected(); c != nil && c.URL != "" {
-			if err := m.backend.Copy(c.URL); err != nil {
-				m.setFlash(err.Error(), true)
-			} else {
-				m.setFlash("copied "+c.URL, false)
-			}
+		if it := m.current(); it != nil {
+			m.copy(it.URL)
+		}
+	case "Y":
+		if _, c := m.selected(); c != nil {
+			m.copy(c.URL)
 		}
 	case "n":
 		if it := m.current(); it != nil {
@@ -357,6 +357,18 @@ func (m *Model) keyNormal(k string) {
 
 func (m *Model) confirm(msg string, cmd ipc.Command) {
 	m.mode, m.confirmMsg, m.confirmCmd = modeConfirm, msg, cmd
+}
+
+func (m *Model) copy(url string) {
+	if url == "" {
+		m.setFlash("no link to copy", true)
+		return
+	}
+	if err := m.backend.Copy(url); err != nil {
+		m.setFlash(err.Error(), true)
+		return
+	}
+	m.setFlash("copied "+url, false)
 }
 
 func (m *Model) open(url string) {
