@@ -453,3 +453,46 @@ func TestMergeQueue(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeQueueRow(t *testing.T) {
+	m, be := newModel()
+	s := snapshot()
+	s.Items[1].MergeQueue = &model.MergeQueue{State: "awaiting_checks", Position: 2, URL: "https://github.com/org/repo/queue/main"}
+	s.Items[1].Checks[0].State = model.Passed
+	s.Items[1].Checks[0].URL = "u/unit"
+	m.SetSnapshot(s)
+	keys(m, "2")
+	rows := m.View(100, 16)
+	want := []string{" Merge queue · 1", "▸⧗ merge queue", " Passed · 1", " ✓ unit"}
+	for i, prefix := range want {
+		if !strings.HasPrefix(rows[6+i], prefix) {
+			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
+		}
+	}
+	if !strings.Contains(rows[7], "checks running  GitHub") {
+		t.Errorf("queue row = %q", rows[7])
+	}
+	if !strings.Contains(rows[4], "1/1 done") {
+		t.Errorf("the queue row counts as a check: %q", rows[4])
+	}
+
+	// enter opens the queue; b does not set a bell on it.
+	keys(m, kEnter, "b")
+	if len(be.opened) != 1 || be.opened[0] != "https://github.com/org/repo/queue/main" {
+		t.Errorf("opened %v", be.opened)
+	}
+	if len(be.sent) != 0 || !strings.Contains(m.View(100, 16)[15], "no bell of its own") {
+		t.Errorf("b on the queue row sent %+v", be.sent)
+	}
+	keys(m, "j", kEnter)
+	if len(be.opened) != 2 || be.opened[1] != "u/unit" {
+		t.Errorf("j then enter opened %v", be.opened)
+	}
+
+	// Once the PR leaves the queue, the row goes away.
+	s.Items[1].MergeQueue = nil
+	m.SetSnapshot(s)
+	if got := strings.Join(m.View(100, 16), "\n"); strings.Contains(got, "merge queue") {
+		t.Errorf("queue row still shown:\n%s", got)
+	}
+}

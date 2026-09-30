@@ -35,6 +35,7 @@ changing the meaning of a field bumps `schema`.
     "merge_queue": {           // only while the PR waits in a merge queue
       "state": "awaiting_checks", // queued | awaiting_checks | mergeable | unmergeable | locked
       "position": 2,           // 1 = next to merge
+      "url": "https://github.com/org/repo/queue/main", // the queue page
       "enqueued_at": "…",
       "eta_seconds": 480       // GitHub's estimate, when it gives one
     },

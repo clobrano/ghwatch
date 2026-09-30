@@ -139,6 +139,8 @@ type MergeQueue struct {
 	// Position is the place in line, 1 being next to merge.
 	Position   int       `json:"position"`
 	EnqueuedAt time.Time `json:"enqueued_at"`
+	// URL is the merge queue's page.
+	URL string `json:"url,omitempty"`
 	// ETASeconds is GitHub's estimate of the time left until merge, in
 	// seconds; 0 when GitHub gives none.
 	ETASeconds int `json:"eta_seconds,omitempty"`

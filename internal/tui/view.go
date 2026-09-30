@@ -337,6 +337,24 @@ func (m *Model) queueSeg(q *model.MergeQueue) seg {
 	return seg{what, style}
 }
 
+// queueStatus is the short state of a merge queue entry for the list row.
+func queueStatus(q *model.MergeQueue) (string, string) {
+	switch q.State {
+	case "awaiting_checks":
+		return "checks running", stateStyle(model.Queued)
+	case "mergeable":
+		return "ready to merge", stateStyle(model.Queued)
+	case "unmergeable":
+		return "unmergeable", sRed
+	case "locked":
+		return "queue locked", stateStyle(model.Queued)
+	}
+	if q.Position > 0 {
+		return ordinal(q.Position) + " in line", stateStyle(model.Queued)
+	}
+	return "queued", stateStyle(model.Queued)
+}
+
 func ordinal(n int) string {
 	suffix := "th"
 	if n%100 < 11 || n%100 > 13 {
@@ -386,7 +404,8 @@ func (m *Model) checksBody(w, rows int) []line {
 	if it == nil {
 		return nil
 	}
-	if len(it.Checks) == 0 {
+	checks := listed(it)
+	if len(checks) == 0 {
 		if it.HeadSHA == "" {
 			return nil
 		}
@@ -396,7 +415,6 @@ func (m *Model) checksBody(w, rows int) []line {
 	for _, c := range it.Checks {
 		anyRequired = anyRequired || c.Required
 	}
-	checks := grouped(it.Checks)
 	sel := m.selIndex(it.ID, checks)
 
 	// One header row per non-empty group, then its checks.
@@ -447,7 +465,7 @@ func (m *Model) checksBody(w, rows int) []line {
 		optW = 4
 	}
 	nameW := max(w-3-1-timeW-2-srcW-optW, 8)
-	groupStyle := [...]string{sRed, sYellow, sGreen, sDim}
+	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sDim}
 	var out []line
 	for _, r := range list[top:] {
 		if len(out) >= rows {
@@ -468,10 +486,14 @@ func (m *Model) checksBody(w, rows int) []line {
 			n := truncate(c.Name, nameW-2)
 			name = line{{" " + n, nameStyle}, {" " + bellIcon, sCyan}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
 		}
+		when, whenStyle := m.checkTime(c), stateStyle(c.State)
+		if c.State == model.Queued {
+			when, whenStyle = queueStatus(it.MergeQueue)
+		}
 		l := append(line{marker, icon(c.State)}, name...)
-		l = append(l, seg{" " + padLeft(m.checkTime(c), timeW), stateStyle(c.State)},
+		l = append(l, seg{" " + padLeft(when, timeW), whenStyle},
 			seg{"  " + padRight(c.Source, srcW), sDim})
-		if anyRequired && !c.Required {
+		if anyRequired && !c.Required && c.State != model.Queued {
 			l = append(l, seg{" opt", sDim})
 		}
 		out = append(out, l)

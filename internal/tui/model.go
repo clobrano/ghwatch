@@ -144,19 +144,22 @@ type selection struct {
 
 // Check groups, in display order.
 const (
-	groupFailed = iota
+	groupQueue = iota
+	groupFailed
 	groupRunning
 	groupPassed
 	groupCancelled
 )
 
-var groupNames = [...]string{"Failed", "Running", "Passed", "Cancelled"}
+var groupNames = [...]string{"Merge queue", "Failed", "Running", "Passed", "Cancelled"}
 
 // checkGroup puts a check in its display group. Pending checks have not
 // finished, so they go with the running ones; skipped ones need nothing,
 // so they go with the passed ones.
 func checkGroup(s model.State) int {
 	switch s {
+	case model.Queued:
+		return groupQueue
 	case model.Failed:
 		return groupFailed
 	case model.Running, model.Pending:
@@ -175,6 +178,22 @@ func grouped(checks []model.Check) []model.Check {
 	return out
 }
 
+// queueRow is the list row standing for an item's merge queue entry: it
+// can be selected and opened like a check, but exists only in the view.
+func queueRow(q *model.MergeQueue) model.Check {
+	return model.Check{Name: "merge queue", Source: "GitHub", State: model.Queued, URL: q.URL}
+}
+
+// listed returns the rows of an item's check list: its merge queue entry,
+// when it is queued, then its checks grouped.
+func listed(it *model.Item) []model.Check {
+	out := grouped(it.Checks)
+	if q := it.MergeQueue; q != nil {
+		out = append([]model.Check{queueRow(q)}, out...)
+	}
+	return out
+}
+
 // selIndex returns the index of the selected check in checks (display order).
 func (m *Model) selIndex(id string, checks []model.Check) int {
 	s := m.sel[id]
@@ -190,19 +209,25 @@ func (m *Model) selIndex(id string, checks []model.Check) int {
 
 func (m *Model) selected() (*model.Item, *model.Check) {
 	it := m.current()
-	if it == nil || len(it.Checks) == 0 {
+	if it == nil {
+		return nil, nil
+	}
+	checks := listed(it)
+	if len(checks) == 0 {
 		return it, nil
 	}
-	checks := grouped(it.Checks)
 	return it, &checks[m.selIndex(it.ID, checks)]
 }
 
 func (m *Model) moveCheck(delta int) {
 	it := m.current()
-	if it == nil || len(it.Checks) == 0 {
+	if it == nil {
 		return
 	}
-	checks := grouped(it.Checks)
+	checks := listed(it)
+	if len(checks) == 0 {
+		return
+	}
 	i := min(max(m.selIndex(it.ID, checks)+delta, 0), len(checks)-1)
 	m.sel[it.ID] = selection{key: checks[i].Key(), idx: i}
 }
@@ -299,7 +324,9 @@ func (m *Model) keyNormal(k string) {
 			m.send(ipc.Command{Op: ipc.OpAlerts, ID: it.ID, On: &on})
 		}
 	case "b":
-		if it, c := m.selected(); c != nil {
+		if it, c := m.selected(); c != nil && c.State == model.Queued {
+			m.setFlash("the merge queue has no bell of its own; n covers the merge", true)
+		} else if c != nil {
 			on := !it.Watching(c.Name)
 			m.send(ipc.Command{Op: ipc.OpCheckAlerts, ID: it.ID, Check: c.Name, On: &on})
 		}
