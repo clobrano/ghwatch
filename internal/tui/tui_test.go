@@ -323,3 +323,17 @@ func TestGroupScrollShowsHeader(t *testing.T) {
 		t.Errorf("scrolled back, first body row = %q", rows[5])
 	}
 }
+
+func TestCancelledGroupAtBottom(t *testing.T) {
+	m, _ := newModel()
+	s := snapshot()
+	s.Items[0].Checks = append([]model.Check{{Name: "stale-job", Source: "Prow", State: model.Cancelled}}, s.Items[0].Checks...)
+	m.SetSnapshot(s)
+	rows := m.View(90, 20)
+	want := []string{" Failed · 1", "▸✗ e2e-aws-ovn", " Running · 2", " ● e2e-metal-ipi", " ◌ tide", " Passed · 1", " ✓ lint", " Cancelled · 1", " ⊘ stale-job"}
+	for i, prefix := range want {
+		if !strings.HasPrefix(rows[5+i], prefix) {
+			t.Errorf("row %d = %q, want prefix %q", 5+i, rows[5+i], prefix)
+		}
+	}
+}

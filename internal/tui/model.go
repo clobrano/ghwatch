@@ -147,26 +147,28 @@ const (
 	groupFailed = iota
 	groupRunning
 	groupPassed
+	groupCancelled
 )
 
-var groupNames = [...]string{"Failed", "Running", "Passed"}
+var groupNames = [...]string{"Failed", "Running", "Passed", "Cancelled"}
 
-// checkGroup puts a check in the Failed, Running or Passed group.
-// Cancelled checks did not succeed and usually need a re-run, so they go
-// with the failures; pending ones have not finished, so they go with the
-// running ones; skipped ones need nothing, so they go with the passed ones.
+// checkGroup puts a check in its display group. Pending checks have not
+// finished, so they go with the running ones; skipped ones need nothing,
+// so they go with the passed ones.
 func checkGroup(s model.State) int {
 	switch s {
-	case model.Failed, model.Cancelled:
+	case model.Failed:
 		return groupFailed
 	case model.Running, model.Pending:
 		return groupRunning
+	case model.Cancelled:
+		return groupCancelled
 	}
 	return groupPassed
 }
 
-// grouped returns the checks in display order: failed, then running, then
-// passed. Within a group, checks keep the daemon's first-seen order.
+// grouped returns the checks in display order: failed, running, passed,
+// then cancelled. Within a group, checks keep the daemon's first-seen order.
 func grouped(checks []model.Check) []model.Check {
 	out := append([]model.Check(nil), checks...)
 	sort.SliceStable(out, func(i, j int) bool { return checkGroup(out[i].State) < checkGroup(out[j].State) })

@@ -99,9 +99,9 @@ last poll failed.
 | `q` | quit this TUI (the daemon keeps running) |
 
 Tabs keep the order in which the PRs were added. Checks are split into
-three groups, each under a header with its count: **Failed** (including
-cancelled), then **Running** (including pending), then **Passed**
-(including skipped). Within a group, checks stay in the order they were
+groups, each under a header with its count: **Failed**, then **Running**
+(including pending), then **Passed** (including skipped), then
+**Cancelled** at the bottom. Within a group, checks stay in the order they were
 first seen. When a check changes group, the selection follows it. A tab label starts with the PR's state icon, and a
 `⍾` marks PRs with alerts on. A PR from a repository other than the most
 common one gets a short repository prefix (`osac#58`). Checks marked `opt`

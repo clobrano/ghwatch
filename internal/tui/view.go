@@ -330,7 +330,7 @@ func (m *Model) checksBody(w, rows int) []line {
 		optW = 4
 	}
 	nameW := max(w-3-1-timeW-2-srcW-optW, 8)
-	groupStyle := [...]string{sRed, sYellow, sGreen}
+	groupStyle := [...]string{sRed, sYellow, sGreen, sDim}
 	var out []line
 	for _, r := range list[top:] {
 		if len(out) >= rows {
