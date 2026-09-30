@@ -378,7 +378,8 @@ func printChecks(w io.Writer, it model.Item, now time.Time) {
 	for _, c := range it.Checks {
 		var dur string
 		switch {
-		case c.StartedAt != nil && c.CompletedAt != nil:
+		case c.StartedAt != nil && c.CompletedAt != nil && !c.CompletedAt.Before(*c.StartedAt):
+			// Skipped checks may end "before" they start: no duration then.
 			dur = c.CompletedAt.Sub(*c.StartedAt).Round(time.Second).String()
 		case c.StartedAt != nil && c.State == model.Running:
 			dur = now.Sub(*c.StartedAt).Round(time.Second).String()
