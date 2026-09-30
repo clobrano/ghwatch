@@ -459,12 +459,6 @@ func (m *Model) checksBody(w, rows int) []line {
 	top = max(min(top, len(list)-rows), 0)
 	m.top[it.ID] = top
 
-	const timeW, srcW = 14, 8
-	optW := 0
-	if anyRequired {
-		optW = 4
-	}
-	nameW := max(w-3-1-timeW-2-srcW-optW, 8)
 	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sDim}
 	var out []line
 	for _, r := range list[top:] {
@@ -475,51 +469,62 @@ func (m *Model) checksBody(w, rows int) []line {
 			out = append(out, line{{" " + groupNames[r.group], groupStyle[r.group] + sBold}, {" · " + strconv.Itoa(r.count), sDim}})
 			continue
 		}
-		c := checks[r.check]
-		marker, nameStyle := seg{" ", ""}, ""
-		if r.check == sel {
-			marker, nameStyle = seg{"▸", sCyan + sBold}, sBold
-		}
-		// The name cell ends with a bell when the job has its own alerts.
-		name := line{{" " + padRight(c.Name, nameW), nameStyle}}
-		if it.Watching(c.Name) {
-			n := truncate(c.Name, nameW-2)
-			name = line{{" " + n, nameStyle}, {" " + bellIcon, sCyan}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
-		}
-		when, whenStyle := m.checkTime(c), stateStyle(c.State)
-		if c.State == model.Queued {
-			when, whenStyle = queueStatus(it.MergeQueue)
-		}
-		l := append(line{marker, icon(c.State)}, name...)
-		l = append(l, seg{" " + padLeft(when, timeW), whenStyle},
-			seg{"  " + padRight(c.Source, srcW), sDim})
-		if anyRequired && !c.Required && c.State != model.Queued {
-			l = append(l, seg{" opt", sDim})
-		}
-		out = append(out, l)
+		out = append(out, m.checkRow(it, checks[r.check], r.check == sel, w, anyRequired))
 	}
 	return out
 }
 
+// checkRow renders one row of the check list, w cells wide.
+func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, anyRequired bool) line {
+	const timeW, srcW = 14, 8
+	optW := 0
+	if anyRequired {
+		optW = 4
+	}
+	nameW := max(w-3-1-timeW-2-srcW-optW, 8)
+	marker, nameStyle := seg{" ", ""}, ""
+	if selected {
+		marker, nameStyle = seg{"▸", sCyan + sBold}, sBold
+	}
+	// The name cell ends with a bell when the job has its own alerts.
+	name := line{{" " + padRight(c.Name, nameW), nameStyle}}
+	if it.Watching(c.Name) {
+		n := truncate(c.Name, nameW-2)
+		name = line{{" " + n, nameStyle}, {" " + bellIcon, sCyan}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
+	}
+	when, whenStyle := m.checkTime(c), stateStyle(c.State)
+	if c.State == model.Queued {
+		when, whenStyle = queueStatus(it.MergeQueue)
+	}
+	l := append(line{marker, icon(c.State)}, name...)
+	l = append(l, seg{" " + padLeft(when, timeW), whenStyle},
+		seg{"  " + padRight(c.Source, srcW), sDim})
+	if anyRequired && !c.Required && c.State != model.Queued {
+		l = append(l, seg{" opt", sDim})
+	}
+	return l
+}
+
+// findBody lists the jobs of the current tab that match the find query.
 func (m *Model) findBody(w, rows int) []line {
-	matches := m.findMatches()
+	it := m.current()
+	checks, matches := m.findMatches()
 	if len(matches) == 0 {
-		return []line{{{" no match", sDim}}}
+		return []line{{{" no matching job", sDim}}}
+	}
+	anyRequired := false
+	for _, c := range it.Checks {
+		anyRequired = anyRequired || c.Required
 	}
 	sel := min(m.findSel, len(matches)-1)
 	m.findSel = sel
-	start := max(sel-rows+1, 0)
-	var out []line
+	out := []line{{{fmt.Sprintf(" %d of %d jobs match", len(matches), len(checks)), sDim}}}
+	start := max(sel-(rows-1)+1, 0)
 	for n, idx := range matches[start:] {
 		if len(out) >= rows {
 			break
 		}
-		it := m.items()[idx]
-		marker, style := seg{" ", ""}, ""
-		if start+n == sel {
-			marker, style = seg{"▸", sCyan + sBold}, sBold
-		}
-		out = append(out, line{marker, icon(model.ItemState(it)), {" " + ref(it), style}, {"  " + it.Title, sDim}})
+		out = append(out, m.checkRow(it, checks[idx], start+n == sel, w, anyRequired))
 	}
 	return out
 }
@@ -553,7 +558,7 @@ func (m *Model) eventsBody() []line {
 var helpRows = [][2]string{
 	{"h / l, gT / gt", "previous / next tab"},
 	{"1 – 9", "jump to tab N"},
-	{"/", "find a PR by number or title"},
+	{"/", "find a job in this tab (ignores case)"},
 	{"j / k, gg / G", "move between checks"},
 	{"enter", "open the selected check's job page"},
 	{"o", "open the PR page"},
@@ -616,7 +621,7 @@ func (m *Model) footer(w int) line {
 	case m.mode == modeAdd:
 		left = line{{" Add PR (URL or owner/repo#N): ", sBold}, {string(m.input) + "▏", ""}}
 	case m.mode == modeFind:
-		left = line{{" /", sBold}, {string(m.input) + "▏", ""}, {"   ↑/↓ choose · enter jump · esc cancel", sDim}}
+		left = line{{" /", sBold}, {string(m.input) + "▏", ""}, {"   ↑/↓ choose · enter select · esc cancel", sDim}}
 	case m.mode == modeConfirm:
 		left = line{{" " + m.confirmMsg + " ", sBold}, {"[y/N]", sYellow}}
 	case m.flash != "" && m.now().Before(m.flashUntil):

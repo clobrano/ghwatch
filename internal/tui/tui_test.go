@@ -194,18 +194,52 @@ func TestUnwatchedTabKeepsPosition(t *testing.T) {
 }
 
 func TestFind(t *testing.T) {
-	m, _ := newModel()
-	keys(m, "/", "s", "b", "d", kEnter)
-	if m.active != "pr:org/repo#131" {
-		t.Errorf("find sbd: active = %s", m.active)
+	m, be := newModel()
+	// Searches the jobs of the current tab, ignoring case; tabs stay put.
+	keys(m, "/", "M", "E", "T", "A", "L")
+	rows := m.View(90, 16)
+	if !strings.Contains(rows[6], "1 of 4 jobs match") || !strings.HasPrefix(rows[7], "▸● e2e-metal-ipi") {
+		t.Errorf("find list =\n%s", strings.Join(rows[6:9], "\n"))
 	}
-	keys(m, "/", "5", "8", kEnter)
-	if m.active != "pr:osac/osac#58" {
-		t.Errorf("find 58: active = %s", m.active)
+	if !strings.Contains(rows[15], "/METAL") {
+		t.Errorf("footer = %q", rows[15])
 	}
-	keys(m, "/", "z", "z", "z", kEnter)
-	if m.active != "pr:osac/osac#58" {
-		t.Errorf("no match moved the tab")
+	keys(m, kEnter)
+	if m.mode != modeNormal || m.active != "pr:org/repo#123" {
+		t.Fatalf("mode %v, active %s", m.mode, m.active)
+	}
+	if _, c := m.selected(); c.Name != "e2e-metal-ipi" {
+		t.Errorf("selected %s", c.Name)
+	}
+	keys(m, kEnter) // enter again opens the job
+	if len(be.opened) != 1 || be.opened[0] != "u/metal" {
+		t.Errorf("opened %v", be.opened)
+	}
+
+	// Several matches: substring matches first, arrows choose.
+	keys(m, "/", "e", "2", "e")
+	if _, matches := m.findMatches(); len(matches) != 2 {
+		t.Fatalf("e2e matches %d jobs", len(matches))
+	}
+	keys(m, kDown, kEnter)
+	if _, c := m.selected(); c.Name != "e2e-metal-ipi" {
+		t.Errorf("second e2e match: selected %s", c.Name)
+	}
+
+	// No match, or esc: the selection does not move.
+	keys(m, "/", "z", "z", "z")
+	if !strings.Contains(strings.Join(m.View(90, 16), "\n"), "no matching job") {
+		t.Error("no-match message missing")
+	}
+	keys(m, kEnter, "/", "l", "i", "n", "t", kEsc)
+	if _, c := m.selected(); c.Name != "e2e-metal-ipi" {
+		t.Errorf("selection moved to %s", c.Name)
+	}
+
+	// Jobs of another tab are not searched.
+	keys(m, "/", "u", "n", "i", "t", kEnter)
+	if m.active != "pr:org/repo#123" {
+		t.Errorf("find switched tab to %s", m.active)
 	}
 }
 

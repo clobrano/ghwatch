@@ -412,23 +412,33 @@ func (m *Model) keyFind(k string) {
 	}
 	before := string(m.input)
 	m.keyInput(k, func(string) {
-		if matches := m.findMatches(); len(matches) > 0 {
-			m.setActive(matches[min(m.findSel, len(matches)-1)])
+		it := m.current()
+		checks, matches := m.findMatches()
+		if it == nil || len(matches) == 0 {
+			return
 		}
+		i := matches[min(m.findSel, len(matches)-1)]
+		m.sel[it.ID] = selection{key: checks[i].Key(), idx: i}
 	})
 	if string(m.input) != before {
 		m.findSel = 0
 	}
 }
 
-// findMatches returns the indexes of items matching the find query, best first.
-func (m *Model) findMatches() []int {
+// findMatches returns the current tab's job list (as displayed) and the
+// indexes of the jobs whose name matches the find query, ignoring case,
+// best first.
+func (m *Model) findMatches() ([]model.Check, []int) {
+	it := m.current()
+	if it == nil {
+		return nil, nil
+	}
+	checks := listed(it)
 	q := strings.ToLower(string(m.input))
 	type hit struct{ idx, score int }
 	var hits []hit
-	for i, it := range m.items() {
-		hay := strings.ToLower(ref(it) + " " + it.Title + " " + it.Branch)
-		if s, ok := fuzzy(q, hay); ok {
+	for i, c := range checks {
+		if s, ok := fuzzy(q, strings.ToLower(c.Name)); ok {
 			hits = append(hits, hit{i, s})
 		}
 	}
@@ -437,7 +447,7 @@ func (m *Model) findMatches() []int {
 	for i, h := range hits {
 		out[i] = h.idx
 	}
-	return out
+	return checks, out
 }
 
 // fuzzy reports whether q is a subsequence of s; lower scores are
