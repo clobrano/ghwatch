@@ -104,11 +104,25 @@ type Item struct {
 	Lifecycle Lifecycle `json:"lifecycle"`
 	State     State     `json:"state"`
 	Alerts    bool      `json:"alerts"`
-	Checks    []Check   `json:"checks"`
+	// WatchedChecks names the checks (jobs) with their own notifications:
+	// each of their state changes notifies, even with Alerts off. They are
+	// kept across new pushes, since re-run jobs keep their names.
+	WatchedChecks []string `json:"watched_checks,omitempty"`
+	Checks        []Check  `json:"checks"`
 	// Error is set when the last fetch of this item failed; the rest of
 	// the item is then the last known state.
 	Error     string    `json:"error,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Watching reports whether the check named name has its own notifications.
+func (it Item) Watching(name string) bool {
+	for _, n := range it.WatchedChecks {
+		if n == name {
+			return true
+		}
+	}
+	return false
 }
 
 // EventType is a kind of notification-worthy event.
@@ -120,6 +134,10 @@ const (
 	EventCheckStarted EventType = "check_started"
 	EventRestarted    EventType = "ci_restarted"
 	EventFinished     EventType = "item_finished"
+	// EventCheckFinished is a check ending other than by failing (passed,
+	// skipped, cancelled). It only notifies for watched checks, so it is
+	// not in EventTypes.
+	EventCheckFinished EventType = "check_finished"
 )
 
 // EventTypes lists every event type in display order.
@@ -283,6 +301,8 @@ func Diff(prev *Item, cur Item) []Transition {
 			out = append(out, Transition{Type: EventCheckFailed, ItemID: cur.ID, Check: c.Name, From: from, To: c.State, URL: c.URL})
 		case Running:
 			out = append(out, Transition{Type: EventCheckStarted, ItemID: cur.ID, Check: c.Name, From: from, To: c.State, URL: c.URL})
+		case Passed, Skipped, Cancelled:
+			out = append(out, Transition{Type: EventCheckFinished, ItemID: cur.ID, Check: c.Name, From: from, To: c.State, URL: c.URL})
 		}
 	}
 	if pa, ca := Aggregate(prev.Checks), Aggregate(cur.Checks); ca == Passed && pa != Passed && len(cur.Checks) > 0 {

@@ -39,6 +39,10 @@ type Daemon struct {
 	Now func() time.Time
 	// WatchEvery is how often the watchlist file is checked for changes.
 	WatchEvery time.Duration
+	// IdleExit makes the daemon exit once it has had no client for this
+	// long; 0 keeps it running. Auto-started daemons use AutoIdleExit, so
+	// an old daemon goes away with the last TUI (for example after a rebuild).
+	IdleExit time.Duration
 
 	mu        sync.Mutex
 	snap      model.Snapshot
@@ -46,7 +50,12 @@ type Daemon struct {
 	server    *ipc.Server
 	pollNow   chan struct{}
 	fetches   atomic.Int64
+	// lastClient is when a client was last seen connected (loop only).
+	lastClient time.Time
 }
+
+// AutoIdleExit is the IdleExit of daemons started by clients.
+const AutoIdleExit = 10 * time.Second
 
 type fileStat struct {
 	mod  time.Time
@@ -90,6 +99,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 	defer lock.Release()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	d.pollNow = make(chan struct{}, 1)
 	d.loadState()
@@ -114,6 +125,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.Log.Printf("serving on %s, polling every %s", d.Paths.Socket(), d.Config.Interval)
 
 	d.loop(ctx)
+	cancel()
 	if err := <-serveErr; err != nil && !errors.Is(err, net.ErrClosed) {
 		return err
 	}
@@ -126,11 +138,16 @@ func (d *Daemon) loop(ctx context.Context) {
 	next := time.NewTimer(0)
 	defer next.Stop()
 	failures := 0
+	d.lastClient = time.Now()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-watch.C:
+			if d.idle(time.Now()) {
+				d.Log.Printf("no clients for %s, exiting", d.IdleExit)
+				return
+			}
 			changed, err := d.reloadWatchlist(false)
 			if err != nil {
 				d.Log.Printf("watchlist: %v", err)
@@ -167,6 +184,21 @@ func (d *Daemon) loop(ctx context.Context) {
 		}
 		next.Reset(wait)
 	}
+}
+
+// idle reports whether the daemon should exit for lack of clients.
+func (d *Daemon) idle(now time.Time) bool {
+	if d.IdleExit <= 0 {
+		return false
+	}
+	d.mu.Lock()
+	srv := d.server
+	d.mu.Unlock()
+	if srv != nil && srv.Clients() > 0 {
+		d.lastClient = now
+		return false
+	}
+	return now.Sub(d.lastClient) >= d.IdleExit
 }
 
 // backoff doubles the interval per consecutive failure, up to 15 minutes.
@@ -259,6 +291,7 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 		return nil
 	}
 	cur.Alerts = prev.Alerts
+	cur.WatchedChecks = prev.WatchedChecks
 	var prevp *model.Item
 	if prev.HeadSHA != "" {
 		prevp = &prev
@@ -285,12 +318,16 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 	cur.UpdatedAt = now
 	d.snap.Items[idx] = cur
 
-	if !cur.Alerts || d.snap.Settings.Mute {
+	if d.snap.Settings.Mute || !cur.Alerts && len(cur.WatchedChecks) == 0 {
 		return nil
 	}
 	var notes []notify.Notification
 	for _, t := range model.Diff(prevp, cur) {
-		if d.snap.Settings.Events[t.Type] {
+		// One notification per event, whether it is wanted for the item,
+		// for the watched check, or both.
+		forItem := cur.Alerts && d.snap.Settings.Events[t.Type]
+		forCheck := t.Check != "" && cur.Watching(t.Check)
+		if forItem || forCheck {
 			notes = append(notes, notify.Format(t, cur))
 		}
 	}
@@ -453,6 +490,29 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 				d.publishLocked()
 				return fmt.Sprintf("alerts %s for %s", onOff(*cmd.On), cmd.ID), nil
 			}
+		}
+		return "", fmt.Errorf("not watching %s", cmd.ID)
+	case ipc.OpCheckAlerts:
+		if cmd.On == nil || cmd.Check == "" {
+			return "", errors.New("check_alerts: missing check or on")
+		}
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		for i := range d.snap.Items {
+			it := &d.snap.Items[i]
+			if it.ID != cmd.ID {
+				continue
+			}
+			watched := slices.DeleteFunc(slices.Clone(it.WatchedChecks), func(n string) bool { return n == cmd.Check })
+			if *cmd.On {
+				watched = append(watched, cmd.Check)
+			}
+			if len(watched) == 0 {
+				watched = nil
+			}
+			it.WatchedChecks = watched
+			d.publishLocked()
+			return fmt.Sprintf("alerts %s for job %s", onOff(*cmd.On), cmd.Check), nil
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)
 	case ipc.OpEvents:

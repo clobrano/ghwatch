@@ -32,6 +32,7 @@ changing the meaning of a field bumps `schema`.
     "lifecycle": "open",       // open | merged | closed
     "state": "failed",         // aggregate, or merged/closed once finished
     "alerts": true,            // notifications on for this item (default false)
+    "watched_checks": ["e2e"], // jobs with their own notifications (omitted when none)
     "error": "",               // last fetch of this item failed
     "updated_at": "…",
     "checks": [{               // stable order: first seen, first listed
@@ -63,6 +64,7 @@ changing the meaning of a field bumps `schema`.
 | `unwatch` | `id` | stop watching |
 | `poll` | | poll now |
 | `alerts` | `id`, `on` | per-item notifications |
+| `check_alerts` | `id`, `check`, `on` | notifications for one job, by name |
 | `events` | `events`: `{type: bool}` | enable or disable event types |
 | `mute` | `on` | global mute |
 | `retest` | `id` | re-trigger failed CI |

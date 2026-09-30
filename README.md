@@ -8,7 +8,7 @@ tabbed TUIs and tmux status lines read its state, and it can send a desktop
 notification when a check changes state. Notifications are opt-in per PR.
 
 ```
- ✗ #123 lease-race ⍾ │ ● #131 sbd-timeout │ ✓ #140 docs │ ● osac#58
+ ✗ #123 lease-race  │ ● #131 sbd-timeout │ ✓ #140 docs │ ● osac#58
 ─────────────────────────────────────────────────────────────────────
  org/repo#123  Fix lease renewal race                    @clobrano
  head a1b2c3d · pushed 52m ago · 5/7 done · 1 failing · alerts on
@@ -40,6 +40,9 @@ At runtime it needs:
 - `notify-send` (libnotify) for desktop notifications. With libnotify
   0.7.10 or later, clicking a notification opens the job page;
 - `xdg-open`, or `$BROWSER`, to open links.
+- a [Nerd Font](https://www.nerdfonts.com/) in the terminal for the
+  alert bell (`nf-cod-bell`, U+EAA2). Without one, the bell shows as a
+  placeholder box.
 
 Linux is the primary platform. The code also builds on macOS and the BSDs,
 but notifications there need the `exec` notifier (see below).
@@ -57,10 +60,17 @@ ghwatch status                                      # one line, e.g. "PR ●3 �
 ghwatch status -json                                # the full state snapshot
 ```
 
-The TUI starts the daemon in the background (`ghwatch -serve`) if none is
-running. You can also run the daemon yourself, in a tmux pane or under a
-service manager. Only one daemon runs per user. A second one detects the
-first and exits.
+The TUI starts the daemon in the background if none is running. A daemon
+started this way exits 10 seconds after its last TUI quits. So quitting
+every TUI stops it, and after a rebuild the next TUI starts the new binary.
+While no daemon runs, nothing is polled, no notifications are sent, and
+`ghwatch status` shows the state as stale.
+
+To get notifications and a live status line with no TUI open, run the
+daemon yourself, in a tmux pane or under a service manager:
+`ghwatch -serve` keeps running until you stop it with Ctrl-C or SIGTERM.
+Add `-idle-exit 10m` to make it exit after that long without clients. Only
+one daemon runs per user. A second one detects the first and exits.
 
 `add` and `rm` go through the daemon when it is running, so every open TUI
 updates at once. Otherwise they edit the watchlist file directly.
@@ -90,6 +100,7 @@ last poll failed.
 | `o` | open the PR page |
 | `y` | copy the selected check's URL |
 | `n` | toggle notifications for the current PR |
+| `b` | toggle notifications for the selected job |
 | `N` | notification settings: event types and global mute |
 | `a` | add a PR |
 | `d` | unwatch the current PR (in every client) |
@@ -103,17 +114,26 @@ groups, each under a header with its count: **Failed**, then **Running**
 (including pending), then **Passed** (including skipped), then
 **Cancelled** at the bottom. Within a group, checks stay in the order they were
 first seen. When a check changes group, the selection follows it. A tab label starts with the PR's state icon, and a
-`⍾` marks PRs with alerts on. A PR from a repository other than the most
+bell marks PRs with alerts on. A PR from a repository other than the most
 common one gets a short repository prefix (`osac#58`). Checks marked `opt`
 are not required by branch protection. When a PR has required checks, a
 failing optional check does not turn the PR red.
 
 ### Notifications
 
-Notifications are off for every PR until you press `n` on its tab. The
+Notifications are off for every PR until you press `n` on its tab, or `b`
+on one of its jobs. The
 setting is shared by all clients and survives restarts. `N` chooses which
 events notify: check failed, all checks passed, check started, CI restarted
-by a new push, merged or closed. All of them are enabled at first. Each
+by a new push, merged or closed. All of them are enabled at first.
+
+To follow a single job, select it and press `b`. The job shows a bell after
+its name, and the tab and header show a bell too. That job then notifies
+whenever its state changes (started, failed, passed, skipped, cancelled),
+even with the PR's alerts off. The bell stays on the job across new pushes,
+since a re-run job keeps its name. When an event is wanted both for the
+PR and for the job, it still sends one notification. The global mute
+silences job bells too. Each
 event sends exactly one notification, from the daemon, however many clients
 are open. After a `/retest`, a notification is sent for each job as it
 fails.
