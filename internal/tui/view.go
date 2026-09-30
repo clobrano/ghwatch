@@ -8,6 +8,9 @@ import (
 	"github.com/clobrano/ghwatch/internal/model"
 )
 
+// bellIcon marks alerts: the Nerd Fonts codicon bell (nf-cod-bell).
+const bellIcon = "\ueaa2"
+
 func stateStyle(s model.State) string {
 	switch s {
 	case model.Failed:
@@ -97,7 +100,7 @@ func (m *Model) tabLabels() []line {
 		}
 		l := line{{" ", ""}, icon(st), {" " + name, ""}}
 		if it.Alerts || len(it.WatchedChecks) > 0 {
-			l = append(l, seg{" ⍾", sCyan})
+			l = append(l, seg{" " + bellIcon, sCyan})
 		}
 		l = append(l, seg{" ", ""})
 		if i == m.activeIdx {
@@ -231,7 +234,7 @@ func (m *Model) header(w int) []line {
 		if n == 1 {
 			jobs = "job"
 		}
-		add(seg{fmt.Sprintf("⍾ %d %s", n, jobs), sCyan})
+		add(seg{fmt.Sprintf("%s %d %s", bellIcon, n, jobs), sCyan})
 	}
 	if it.Error != "" {
 		add(seg{"⚠ " + it.Error, sRed})
@@ -356,7 +359,7 @@ func (m *Model) checksBody(w, rows int) []line {
 		name := line{{" " + padRight(c.Name, nameW), nameStyle}}
 		if it.Watching(c.Name) {
 			n := truncate(c.Name, nameW-2)
-			name = line{{" " + n, nameStyle}, {" ⍾", sCyan}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
+			name = line{{" " + n, nameStyle}, {" " + bellIcon, sCyan}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
 		}
 		l := append(line{marker, icon(c.State)}, name...)
 		l = append(l, seg{" " + padLeft(m.checkTime(c), timeW), stateStyle(c.State)},

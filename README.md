@@ -8,7 +8,7 @@ tabbed TUIs and tmux status lines read its state, and it can send a desktop
 notification when a check changes state. Notifications are opt-in per PR.
 
 ```
- ✗ #123 lease-race ⍾ │ ● #131 sbd-timeout │ ✓ #140 docs │ ● osac#58
+ ✗ #123 lease-race  │ ● #131 sbd-timeout │ ✓ #140 docs │ ● osac#58
 ─────────────────────────────────────────────────────────────────────
  org/repo#123  Fix lease renewal race                    @clobrano
  head a1b2c3d · pushed 52m ago · 5/7 done · 1 failing · alerts on
@@ -40,6 +40,9 @@ At runtime it needs:
 - `notify-send` (libnotify) for desktop notifications. With libnotify
   0.7.10 or later, clicking a notification opens the job page;
 - `xdg-open`, or `$BROWSER`, to open links.
+- a [Nerd Font](https://www.nerdfonts.com/) in the terminal for the
+  alert bell (`nf-cod-bell`, U+EAA2). Without one, the bell shows as a
+  placeholder box.
 
 Linux is the primary platform. The code also builds on macOS and the BSDs,
 but notifications there need the `exec` notifier (see below).
@@ -111,7 +114,7 @@ groups, each under a header with its count: **Failed**, then **Running**
 (including pending), then **Passed** (including skipped), then
 **Cancelled** at the bottom. Within a group, checks stay in the order they were
 first seen. When a check changes group, the selection follows it. A tab label starts with the PR's state icon, and a
-`⍾` marks PRs with alerts on. A PR from a repository other than the most
+bell marks PRs with alerts on. A PR from a repository other than the most
 common one gets a short repository prefix (`osac#58`). Checks marked `opt`
 are not required by branch protection. When a PR has required checks, a
 failing optional check does not turn the PR red.
@@ -124,7 +127,7 @@ setting is shared by all clients and survives restarts. `N` chooses which
 events notify: check failed, all checks passed, check started, CI restarted
 by a new push, merged or closed. All of them are enabled at first.
 
-To follow a single job, select it and press `b`. The job shows a `⍾` after
+To follow a single job, select it and press `b`. The job shows a bell after
 its name, and the tab and header show a bell too. That job then notifies
 whenever its state changes (started, failed, passed, skipped, cancelled),
 even with the PR's alerts off. The bell stays on the job across new pushes,

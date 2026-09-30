@@ -66,7 +66,7 @@ func TestView(t *testing.T) {
 	m, _ := newModel()
 	screen := strings.Join(m.View(90, 16), "\n")
 	for _, want := range []string{
-		"✗ #123 lease-race ⍾",
+		"✗ #123 lease-race " + bellIcon,
 		"● #131 sbd-timeout",
 		"⮌ osac#58 docs",
 		"org/repo#123  Fix lease renewal race",
@@ -353,13 +353,13 @@ func TestJobBell(t *testing.T) {
 	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
 	m.SetSnapshot(s)
 	rows := m.View(90, 16)
-	if !strings.HasPrefix(rows[8], "▸● e2e-metal-ipi ⍾ ") || !strings.Contains(rows[8], "running 23m") {
+	if !strings.HasPrefix(rows[8], "▸● e2e-metal-ipi "+bellIcon+" ") || !strings.Contains(rows[8], "running 23m") {
 		t.Errorf("watched job row = %q", rows[8])
 	}
-	if strings.Contains(rows[6], "⍾") {
+	if strings.Contains(rows[6], bellIcon) {
 		t.Errorf("unwatched job has a bell: %q", rows[6])
 	}
-	if !strings.Contains(rows[0], "#123 lease-race ⍾") || !strings.Contains(rows[3], "⍾ 1 job") || strings.Contains(rows[3], "alerts on") {
+	if !strings.Contains(rows[0], "#123 lease-race "+bellIcon) || !strings.Contains(rows[3], bellIcon+" 1 job") || strings.Contains(rows[3], "alerts on") {
 		t.Errorf("tab = %q, header = %q", rows[0], rows[3])
 	}
 	keys(m, "b")
