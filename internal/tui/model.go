@@ -47,10 +47,10 @@ type Model struct {
 	snap      *model.Snapshot
 	connected bool
 
-	active    string         // ID of the active tab
-	activeIdx int            // its index, to stay in place if it disappears
-	sel       map[string]int // selected check per item
-	top       map[string]int // first visible check per item
+	active    string               // ID of the active tab
+	activeIdx int                  // its index, to stay in place if it disappears
+	sel       map[string]selection // selected check per item
+	top       map[string]int       // first visible check per item
 
 	mode       mode
 	input      []rune
@@ -69,7 +69,7 @@ type Model struct {
 
 // NewModel returns an empty model.
 func NewModel(b Backend) *Model {
-	return &Model{backend: b, now: time.Now, sel: map[string]int{}, top: map[string]int{}, Color: true}
+	return &Model{backend: b, now: time.Now, sel: map[string]selection{}, top: map[string]int{}, Color: true}
 }
 
 // Quit reports whether the user asked to leave.
@@ -134,13 +134,65 @@ func (m *Model) setActive(i int) {
 	m.activeIdx, m.active = i, items[i].ID
 }
 
+// selection remembers the selected check by identity, so it follows the
+// check when it moves to another group. idx is the fallback when the check
+// is gone (for example after a new push).
+type selection struct {
+	key string
+	idx int
+}
+
+// Check groups, in display order.
+const (
+	groupFailed = iota
+	groupRunning
+	groupPassed
+)
+
+var groupNames = [...]string{"Failed", "Running", "Passed"}
+
+// checkGroup puts a check in the Failed, Running or Passed group.
+// Cancelled checks did not succeed and usually need a re-run, so they go
+// with the failures; pending ones have not finished, so they go with the
+// running ones; skipped ones need nothing, so they go with the passed ones.
+func checkGroup(s model.State) int {
+	switch s {
+	case model.Failed, model.Cancelled:
+		return groupFailed
+	case model.Running, model.Pending:
+		return groupRunning
+	}
+	return groupPassed
+}
+
+// grouped returns the checks in display order: failed, then running, then
+// passed. Within a group, checks keep the daemon's first-seen order.
+func grouped(checks []model.Check) []model.Check {
+	out := append([]model.Check(nil), checks...)
+	sort.SliceStable(out, func(i, j int) bool { return checkGroup(out[i].State) < checkGroup(out[j].State) })
+	return out
+}
+
+// selIndex returns the index of the selected check in checks (display order).
+func (m *Model) selIndex(id string, checks []model.Check) int {
+	s := m.sel[id]
+	if s.key != "" {
+		for i, c := range checks {
+			if c.Key() == s.key {
+				return i
+			}
+		}
+	}
+	return min(max(s.idx, 0), len(checks)-1)
+}
+
 func (m *Model) selected() (*model.Item, *model.Check) {
 	it := m.current()
 	if it == nil || len(it.Checks) == 0 {
 		return it, nil
 	}
-	i := min(max(m.sel[it.ID], 0), len(it.Checks)-1)
-	return it, &it.Checks[i]
+	checks := grouped(it.Checks)
+	return it, &checks[m.selIndex(it.ID, checks)]
 }
 
 func (m *Model) moveCheck(delta int) {
@@ -148,7 +200,9 @@ func (m *Model) moveCheck(delta int) {
 	if it == nil || len(it.Checks) == 0 {
 		return
 	}
-	m.sel[it.ID] = min(max(m.sel[it.ID]+delta, 0), len(it.Checks)-1)
+	checks := grouped(it.Checks)
+	i := min(max(m.selIndex(it.ID, checks)+delta, 0), len(checks)-1)
+	m.sel[it.ID] = selection{key: checks[i].Key(), idx: i}
 }
 
 func (m *Model) send(cmd ipc.Command) {
@@ -194,9 +248,7 @@ func (m *Model) keyNormal(k string) {
 		case "T":
 			m.setActive((m.activeIdx - 1 + len(m.items())) % max(len(m.items()), 1))
 		case "g":
-			if it := m.current(); it != nil {
-				m.sel[it.ID] = 0
-			}
+			m.moveCheck(-1 << 20)
 		}
 		return
 	}

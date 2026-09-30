@@ -84,8 +84,16 @@ func TestView(t *testing.T) {
 	if len(rows) != 16 {
 		t.Errorf("View returned %d rows", len(rows))
 	}
-	if !strings.HasPrefix(rows[5], "▸✓ lint") || !strings.Contains(rows[5], "2m") {
-		t.Errorf("first check row = %q", rows[5])
+	// Failed first, then running (and pending), then passed, each under a
+	// header; the first failure is selected.
+	want := []string{" Failed · 1", "▸✗ e2e-aws-ovn", " Running · 2", " ● e2e-metal-ipi", " ◌ tide", " Passed · 1", " ✓ lint"}
+	for i, prefix := range want {
+		if !strings.HasPrefix(rows[5+i], prefix) {
+			t.Errorf("row %d = %q, want prefix %q", 5+i, rows[5+i], prefix)
+		}
+	}
+	if !strings.Contains(rows[11], "2m") {
+		t.Errorf("lint row lacks its duration: %q", rows[11])
 	}
 }
 
@@ -105,7 +113,7 @@ func TestTabOverflowKeepsActiveVisible(t *testing.T) {
 
 func TestNavigationAndActions(t *testing.T) {
 	m, be := newModel()
-	keys(m, "j", "j", kEnter, "o", "y")
+	keys(m, "j", kEnter, "o", "y")
 	if !reflect.DeepEqual(be.opened, []string{"u/metal", "https://github.com/org/repo/pull/123"}) {
 		t.Errorf("opened = %v", be.opened)
 	}
@@ -113,11 +121,11 @@ func TestNavigationAndActions(t *testing.T) {
 		t.Errorf("copied = %v", be.copied)
 	}
 	keys(m, "G")
-	if _, c := m.selected(); c.Name != "tide" {
+	if _, c := m.selected(); c.Name != "lint" {
 		t.Errorf("G selected %s", c.Name)
 	}
 	keys(m, "g", "g")
-	if _, c := m.selected(); c.Name != "lint" {
+	if _, c := m.selected(); c.Name != "e2e-aws-ovn" {
 		t.Errorf("gg selected %s", c.Name)
 	}
 	keys(m, "l")
@@ -135,7 +143,7 @@ func TestNavigationAndActions(t *testing.T) {
 
 	// Selection is remembered per tab.
 	keys(m, "1", "j", "2", "1")
-	if _, c := m.selected(); c.Name != "e2e-aws-ovn" {
+	if _, c := m.selected(); c.Name != "e2e-metal-ipi" {
 		t.Errorf("selection not kept per tab: %s", c.Name)
 	}
 
@@ -269,5 +277,49 @@ func TestHelpFitsInColumns(t *testing.T) {
 	keys(m, "x")
 	if m.mode != modeNormal {
 		t.Error("any key should close help")
+	}
+}
+
+func TestSelectionFollowsCheckAcrossGroups(t *testing.T) {
+	m, _ := newModel()
+	keys(m, "j") // e2e-metal-ipi, running
+	s := snapshot()
+	s.Items[0].Checks[2].State = model.Failed
+	m.SetSnapshot(s)
+	if _, c := m.selected(); c.Name != "e2e-metal-ipi" {
+		t.Fatalf("selection moved to %s", c.Name)
+	}
+	rows := m.View(90, 16)
+	if !strings.HasPrefix(rows[5], " Failed · 2") || !strings.HasPrefix(rows[7], "▸✗ e2e-metal-ipi") {
+		t.Errorf("rows =\n%s", strings.Join(rows[5:9], "\n"))
+	}
+
+	// On a new head the check is gone: the selection keeps its position.
+	s = snapshot()
+	s.Items[0].HeadSHA = "new"
+	s.Items[0].Checks = []model.Check{{Name: "unit", Source: "Actions", State: model.Pending}, {Name: "lint", Source: "Actions", State: model.Pending}}
+	m.SetSnapshot(s)
+	if _, c := m.selected(); c.Name != "lint" {
+		t.Errorf("after new head selected %s, want the check at the same position", c.Name)
+	}
+}
+
+func TestGroupScrollShowsHeader(t *testing.T) {
+	m, _ := newModel()
+	// 5 body rows for 7 list rows: the passed group starts below the fold.
+	rows := m.View(90, 12)
+	if strings.Contains(strings.Join(rows, "\n"), "lint") {
+		t.Fatal("screen is tall enough to show every check")
+	}
+	keys(m, "G")
+	rows = m.View(90, 12)
+	body := strings.Join(rows[5:10], "\n")
+	if !strings.Contains(body, "Passed · 1") || !strings.Contains(body, "▸✓ lint") {
+		t.Errorf("body =\n%s", body)
+	}
+	keys(m, "g", "g")
+	rows = m.View(90, 12)
+	if !strings.HasPrefix(rows[5], " Failed · 1") {
+		t.Errorf("scrolled back, first body row = %q", rows[5])
 	}
 }
