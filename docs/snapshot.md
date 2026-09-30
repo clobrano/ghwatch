@@ -50,7 +50,8 @@ changing the meaning of a field bumps `schema`.
       "required": true,        // required by branch protection
       "started_at": "…",       // optional
       "completed_at": "…",     // optional
-      "url": "https://prow…"   // job page
+      "url": "https://…",      // job page: GitHub's check page for a check run, the target URL for a status
+      "details_url": "https://…" // the app's own page (e.g. a Konflux pipeline run), when it differs
     }]
   }]
 }

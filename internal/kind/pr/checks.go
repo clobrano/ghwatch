@@ -2,6 +2,7 @@ package pr
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -28,7 +29,10 @@ var Providers = []Provider{checkRunProvider{}, statusProvider{}}
 
 // Normalize converts the rollup contexts of a head commit into checks,
 // keeping only the latest run of each check when a check was re-run.
-func Normalize(nodes []json.RawMessage) []model.Check {
+// prURL is the pull request's URL: a check run then links to its page on
+// GitHub, as the pull request page does, and keeps the app's own link in
+// DetailsURL. Commit statuses link to their target URL.
+func Normalize(nodes []json.RawMessage, prURL string) []model.Check {
 	byType := map[string]Provider{}
 	for _, p := range Providers {
 		byType[p.Typename()] = p
@@ -52,6 +56,9 @@ func Normalize(nodes []json.RawMessage) []model.Check {
 		c, runID, err := p.Normalize(raw)
 		if err != nil || c.Name == "" {
 			continue
+		}
+		if head.Typename == "CheckRun" && prURL != "" && runID > 0 {
+			c.URL, c.DetailsURL = fmt.Sprintf("%s/checks?check_run_id=%d", prURL, runID), c.URL
 		}
 		key := c.Key()
 		if i, ok := latest[key]; ok {

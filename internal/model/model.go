@@ -88,6 +88,10 @@ type Check struct {
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	URL         string     `json:"url,omitempty"`
+	// DetailsURL is the reporting app's own page for the check (for
+	// example a Konflux pipeline run), when it differs from URL. For check
+	// runs, URL is GitHub's check page, as on the pull request page.
+	DetailsURL string `json:"details_url,omitempty"`
 }
 
 // Key identifies a check within an item head.
