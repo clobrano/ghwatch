@@ -276,9 +276,9 @@ func cmdList(paths config.Paths, w io.Writer) error {
 
 // StatusData is the data available to the status template.
 type StatusData struct {
-	Running, Pending, Passed, Failed, Merged, Closed, Total int
-	Stale                                                   bool
-	Items                                                   []model.Item
+	Running, Pending, Passed, Failed, Queued, Merged, Closed, Total int
+	Stale                                                           bool
+	Items                                                           []model.Item
 }
 
 func cmdStatus(paths config.Paths, cfg config.Config, args []string, w io.Writer) error {
@@ -336,6 +336,8 @@ func summarize(snap *model.Snapshot) StatusData {
 			d.Passed++
 		case model.Failed:
 			d.Failed++
+		case model.Queued:
+			d.Queued++
 		case model.Merged:
 			d.Merged++
 		case model.Closed:

@@ -423,3 +423,33 @@ func TestTitleBar(t *testing.T) {
 		t.Errorf("title = %q", got)
 	}
 }
+
+func TestMergeQueue(t *testing.T) {
+	m, _ := newModel()
+	s := snapshot()
+	s.Items[1].MergeQueue = &model.MergeQueue{State: "awaiting_checks", Position: 2, EnqueuedAt: now.Add(-12 * time.Minute), ETASeconds: 480}
+	s.Items[1].Checks[0].State = model.Passed
+	m.SetSnapshot(s)
+	keys(m, "2")
+	rows := m.View(130, 16)
+	if !strings.Contains(rows[0], "3 PRs ✗1 ⧗1 ⮌1") {
+		t.Errorf("title = %q", rows[0])
+	}
+	if !strings.Contains(rows[1], "⧗ #131 sbd-timeout") {
+		t.Errorf("tabs = %q", rows[1])
+	}
+	if !strings.Contains(rows[4], "in merge queue, checks running, 2nd in line, 12m ago, ~8m left") {
+		t.Errorf("header = %q", rows[4])
+	}
+
+	s.Items[1].MergeQueue = &model.MergeQueue{State: "queued", Position: 1}
+	m.SetSnapshot(s)
+	if got := m.View(130, 16)[4]; !strings.Contains(got, "queued for merge, 1st in line") {
+		t.Errorf("header = %q", got)
+	}
+	for n, want := range map[int]string{1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 11: "11th", 12: "12th", 13: "13th", 21: "21st", 22: "22nd"} {
+		if got := ordinal(n); got != want {
+			t.Errorf("ordinal(%d) = %s, want %s", n, got, want)
+		}
+	}
+}

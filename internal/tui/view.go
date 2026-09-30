@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/clobrano/ghwatch/internal/model"
 )
@@ -27,6 +28,8 @@ func stateStyle(s model.State) string {
 		return sYellow
 	case model.Merged:
 		return sMagenta
+	case model.Queued:
+		return sBlue
 	case model.Pending, model.Skipped, model.Cancelled, model.Closed:
 		return sDim
 	}
@@ -105,7 +108,7 @@ func (m *Model) titleBar(w int) line {
 			alerts++
 		}
 	}
-	for _, st := range []model.State{model.Failed, model.Running, model.Passed, model.Merged} {
+	for _, st := range []model.State{model.Failed, model.Running, model.Passed, model.Queued, model.Merged} {
 		if counts[st] > 0 {
 			left = append(left, seg{" ", ""}, seg{fmt.Sprintf("%s%d", st.Icon(), counts[st]), stateStyle(st)})
 		}
@@ -271,6 +274,10 @@ func (m *Model) header(w int) []line {
 	case it.HeadSHA == "":
 		add(seg{"waiting for the first poll…", sDim})
 	default:
+		// The merge queue comes first: it is what matters most while queued.
+		if q := it.MergeQueue; q != nil {
+			add(m.queueSeg(q))
+		}
 		add(seg{"head " + short(it.HeadSHA), ""})
 		if !it.PushedAt.IsZero() {
 			add(seg{"pushed " + human(m.now().Sub(it.PushedAt)) + " ago", ""})
@@ -283,6 +290,7 @@ func (m *Model) header(w int) []line {
 		if it.Lifecycle.Finished() {
 			add(seg{string(it.Lifecycle), stateStyle(model.ItemState(*it)) + sBold})
 		}
+
 	}
 	if it.Alerts {
 		add(seg{"alerts on", sCyan})
@@ -301,6 +309,47 @@ func (m *Model) header(w int) []line {
 		l2 = append(line{{" ", ""}}, l2...)
 	}
 	return []line{l1, l2}
+}
+
+// queueSeg describes a merge queue entry, e.g. "queued for merge, 2nd in
+// line, 12m ago, ~8m left".
+func (m *Model) queueSeg(q *model.MergeQueue) seg {
+	what, style := "queued for merge", stateStyle(model.Queued)+sBold
+	switch q.State {
+	case "awaiting_checks":
+		what = "in merge queue, checks running"
+	case "mergeable":
+		what = "in merge queue, ready to merge"
+	case "unmergeable":
+		what, style = "in merge queue, unmergeable", sRed+sBold
+	case "locked":
+		what = "in merge queue, queue locked"
+	}
+	if q.Position > 0 {
+		what += ", " + ordinal(q.Position) + " in line"
+	}
+	if !q.EnqueuedAt.IsZero() {
+		what += ", " + human(m.now().Sub(q.EnqueuedAt)) + " ago"
+	}
+	if q.ETASeconds > 0 {
+		what += ", ~" + human(time.Duration(q.ETASeconds)*time.Second) + " left"
+	}
+	return seg{what, style}
+}
+
+func ordinal(n int) string {
+	suffix := "th"
+	if n%100 < 11 || n%100 > 13 {
+		switch n % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
+	}
+	return strconv.Itoa(n) + suffix
 }
 
 func short(sha string) string {
