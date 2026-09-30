@@ -77,11 +77,12 @@ last poll failed.
 | --- | --- |
 | `h` / `l`, `gT` / `gt` | previous / next tab |
 | `1`–`9` | jump to tab N |
-| `/` | find a PR by number, title or branch |
+| `/` | find a job in the current tab (ignores case); `enter` selects it |
 | `j` / `k`, `gg` / `G` | move between checks |
 | `enter` | open the selected check's job page |
 | `o` | open the PR page |
-| `y` | copy the selected check's URL |
+| `y` | copy the PR's URL |
+| `Y` | copy the selected job's URL |
 | `n` | toggle notifications for the current PR |
 | `b` | toggle notifications for the selected job |
 | `N` | notification settings: event types and global mute |

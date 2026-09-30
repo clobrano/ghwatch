@@ -99,7 +99,7 @@ func TestNormalize(t *testing.T) {
 	if err := json.Unmarshal([]byte(rollup), &nodes); err != nil {
 		t.Fatal(err)
 	}
-	got := Normalize(nodes)
+	got := Normalize(nodes, "")
 	if len(got) != 4 {
 		t.Fatalf("got %d checks, want 4 (re-run deduplicated): %+v", len(got), got)
 	}
@@ -245,5 +245,50 @@ func TestMergeQueueEntry(t *testing.T) {
 	it = decode(`{"number":1,"state":"MERGED","merged":true,"headRefOid":"abc","mergeQueueEntry":{"state":"MERGEABLE","position":1}}`)
 	if it.MergeQueue != nil || it.State != model.Merged {
 		t.Errorf("merged PR: queue %+v, state %s", it.MergeQueue, it.State)
+	}
+}
+
+func TestCheckRunLinksToGitHub(t *testing.T) {
+	var nodes []json.RawMessage
+	json.Unmarshal([]byte(`[
+	 {"__typename":"CheckRun","name":"Konflux kflux-prd-rh02 / osac-operator-on-pull-request","status":"COMPLETED","conclusion":"FAILURE",
+	  "databaseId":109857379366,"detailsUrl":"https://konflux-ui.apps.kflux-prd-rh02.0fk9.p1.openshiftapps.com/ns/osac-tenant/pipelinerun/osac-operator-on-pull-request-86zfs",
+	  "checkSuite":{"app":{"slug":"red-hat-konflux","name":"Red Hat Konflux"}}},
+	 {"__typename":"CheckRun","name":"unit","status":"COMPLETED","conclusion":"FAILURE","databaseId":7,
+	  "detailsUrl":"https://github.com/osac-project/osac/actions/runs/42/job/7","checkSuite":{"app":{"slug":"github-actions"}}},
+	 {"__typename":"StatusContext","context":"ci/prow/e2e","state":"FAILURE","targetUrl":"https://prow.ci/view/1"}
+	]`), &nodes)
+	got := Normalize(nodes, "https://github.com/osac-project/osac/pull/1228")
+
+	konflux := got[0]
+	if konflux.URL != "https://github.com/osac-project/osac/pull/1228/checks?check_run_id=109857379366" {
+		t.Errorf("Konflux URL = %q, want the GitHub check page", konflux.URL)
+	}
+	if !strings.HasPrefix(konflux.DetailsURL, "https://konflux-ui.apps.") {
+		t.Errorf("Konflux details URL = %q", konflux.DetailsURL)
+	}
+	if got[1].URL != "https://github.com/osac-project/osac/pull/1228/checks?check_run_id=7" || got[1].DetailsURL != "https://github.com/osac-project/osac/actions/runs/42/job/7" {
+		t.Errorf("Actions check = %+v", got[1])
+	}
+	// A commit status has no GitHub check page: it keeps its target URL.
+	if got[2].URL != "https://prow.ci/view/1" || got[2].DetailsURL != "" {
+		t.Errorf("status = %+v", got[2])
+	}
+
+	// Re-running failed Actions jobs still finds the run, via the details URL.
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	gh := github.New()
+	gh.API = srv.URL
+	gh.TokenFunc = func() (string, error) { return "t", nil }
+	if _, err := (Kind{}).Retest(context.Background(), gh, model.Item{ID: "pr:osac-project/osac#1228", Checks: got[1:2]}); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0] != "POST /repos/osac-project/osac/actions/runs/42/rerun-failed-jobs" {
+		t.Errorf("calls = %v", calls)
 	}
 }

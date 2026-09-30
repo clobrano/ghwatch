@@ -267,7 +267,7 @@ func (p *prNode) toItem(id, repo string) model.Item {
 			it.HeadSHA = c.Oid
 		}
 		if c.StatusCheckRollup != nil {
-			it.Checks = Normalize(c.StatusCheckRollup.Contexts.Nodes)
+			it.Checks = Normalize(c.StatusCheckRollup.Contexts.Nodes, p.URL)
 		}
 	}
 	if it.Checks == nil {
@@ -294,7 +294,11 @@ func (Kind) Retest(ctx context.Context, gh *github.Client, it model.Item) (strin
 		if c.Source == SourceProw {
 			prow = true
 		}
-		if m := runRE.FindStringSubmatch(c.URL); m != nil {
+		link := c.DetailsURL // the Actions job page, which names the run
+		if link == "" {
+			link = c.URL
+		}
+		if m := runRE.FindStringSubmatch(link); m != nil {
 			runs[m[1]] = true
 		}
 	}

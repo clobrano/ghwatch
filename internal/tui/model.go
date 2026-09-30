@@ -311,12 +311,12 @@ func (m *Model) keyNormal(k string) {
 			m.open(it.URL)
 		}
 	case "y":
-		if _, c := m.selected(); c != nil && c.URL != "" {
-			if err := m.backend.Copy(c.URL); err != nil {
-				m.setFlash(err.Error(), true)
-			} else {
-				m.setFlash("copied "+c.URL, false)
-			}
+		if it := m.current(); it != nil {
+			m.copy(it.URL)
+		}
+	case "Y":
+		if _, c := m.selected(); c != nil {
+			m.copy(c.URL)
 		}
 	case "n":
 		if it := m.current(); it != nil {
@@ -357,6 +357,18 @@ func (m *Model) keyNormal(k string) {
 
 func (m *Model) confirm(msg string, cmd ipc.Command) {
 	m.mode, m.confirmMsg, m.confirmCmd = modeConfirm, msg, cmd
+}
+
+func (m *Model) copy(url string) {
+	if url == "" {
+		m.setFlash("no link to copy", true)
+		return
+	}
+	if err := m.backend.Copy(url); err != nil {
+		m.setFlash(err.Error(), true)
+		return
+	}
+	m.setFlash("copied "+url, false)
 }
 
 func (m *Model) open(url string) {
@@ -412,23 +424,33 @@ func (m *Model) keyFind(k string) {
 	}
 	before := string(m.input)
 	m.keyInput(k, func(string) {
-		if matches := m.findMatches(); len(matches) > 0 {
-			m.setActive(matches[min(m.findSel, len(matches)-1)])
+		it := m.current()
+		checks, matches := m.findMatches()
+		if it == nil || len(matches) == 0 {
+			return
 		}
+		i := matches[min(m.findSel, len(matches)-1)]
+		m.sel[it.ID] = selection{key: checks[i].Key(), idx: i}
 	})
 	if string(m.input) != before {
 		m.findSel = 0
 	}
 }
 
-// findMatches returns the indexes of items matching the find query, best first.
-func (m *Model) findMatches() []int {
+// findMatches returns the current tab's job list (as displayed) and the
+// indexes of the jobs whose name matches the find query, ignoring case,
+// best first.
+func (m *Model) findMatches() ([]model.Check, []int) {
+	it := m.current()
+	if it == nil {
+		return nil, nil
+	}
+	checks := listed(it)
 	q := strings.ToLower(string(m.input))
 	type hit struct{ idx, score int }
 	var hits []hit
-	for i, it := range m.items() {
-		hay := strings.ToLower(ref(it) + " " + it.Title + " " + it.Branch)
-		if s, ok := fuzzy(q, hay); ok {
+	for i, c := range checks {
+		if s, ok := fuzzy(q, strings.ToLower(c.Name)); ok {
 			hits = append(hits, hit{i, s})
 		}
 	}
@@ -437,7 +459,7 @@ func (m *Model) findMatches() []int {
 	for i, h := range hits {
 		out[i] = h.idx
 	}
-	return out
+	return checks, out
 }
 
 // fuzzy reports whether q is a subsequence of s; lower scores are
