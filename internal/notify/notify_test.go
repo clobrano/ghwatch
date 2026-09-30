@@ -1,0 +1,51 @@
+package notify
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/clobrano/ghwatch/internal/model"
+)
+
+func TestFormat(t *testing.T) {
+	it := model.Item{Repo: "org/repo", Number: 123, Title: "Fix lease race", URL: "https://pr", HeadSHA: "a1b2c3d4e5", Lifecycle: model.LifeMerged}
+	tests := []struct {
+		tr     model.Transition
+		title  string
+		url    string
+		urgent bool
+	}{
+		{model.Transition{Type: model.EventCheckFailed, Check: "e2e-aws", URL: "https://job"}, "✗ e2e-aws failed", "https://job", true},
+		{model.Transition{Type: model.EventCheckStarted, Check: "unit", URL: "https://job"}, "● unit started", "https://job", false},
+		{model.Transition{Type: model.EventAllPassed}, "✓ all checks passed", "https://pr", false},
+		{model.Transition{Type: model.EventRestarted}, "◌ CI restarted by a new push (a1b2c3d)", "https://pr", false},
+		{model.Transition{Type: model.EventFinished, To: model.Merged}, "⮌ merged", "https://pr", false},
+	}
+	for _, tt := range tests {
+		n := Format(tt.tr, it)
+		if n.Title != tt.title || n.URL != tt.url || n.Urgent != tt.urgent || n.Body != "org/repo#123 Fix lease race" {
+			t.Errorf("Format(%s) = %+v", tt.tr.Type, n)
+		}
+	}
+}
+
+func TestExec(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "event.json")
+	n := Notification{Title: "✗ unit failed", URL: "https://job", Event: model.Transition{Type: model.EventCheckFailed}}
+	if err := (Exec{Command: "cat > " + out}).Notify(context.Background(), n); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(out)
+	var got Notification
+	if err := json.Unmarshal(data, &got); err != nil || got.Title != n.Title || got.Event.Type != model.EventCheckFailed {
+		t.Errorf("plugin got %s (%v)", data, err)
+	}
+	err := (Exec{Command: "echo boom >&2; exit 3"}).Notify(context.Background(), n)
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Errorf("failing command: %v", err)
+	}
+}
