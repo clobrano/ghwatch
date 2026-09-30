@@ -7,25 +7,7 @@ Prow / OpenShift CI. A single background daemon polls GitHub. Any number of
 tabbed TUIs and tmux status lines read its state, and it can send a desktop
 notification when a check changes state. Notifications are opt-in per PR.
 
-```
- GHWATCH  GitHub PR watcher · 4 PRs ✗1 ●2 ✓1 ·  1      polled 12s ago
- ✗ #123 lease-race  │ ● #131 sbd-timeout │ ✓ #140 docs │ ● osac#58
-─────────────────────────────────────────────────────────────────────
- org/repo#123  Fix lease renewal race                    @clobrano
- head a1b2c3d · pushed 52m ago · 5/7 done · 1 failing · alerts on
-─────────────────────────────────────────────────────────────────────
- Failed · 1
- ✗ e2e-aws-ovn                      41m    Prow
- Running · 3
-▸● e2e-metal-ipi                running 23m Prow
- ● ci/prow/images               running 5m  Prow
- ◌ tide                             pending Prow     opt
- Passed · 2
- ✓ lint                              2m    Actions
- ✓ unit                              6m    Actions
-─────────────────────────────────────────────────────────────────────
- h/l tab · j/k check · enter job · o PR · n alerts · N events · ?   connected
-```
+![ghwatch demo: jobs finish, one fails, a PR goes through the merge queue and merges](docs/demo.gif)
 
 ## Install
 
@@ -213,6 +195,22 @@ The `exec` notifier is the plugin hook for other delivery channels. It runs
 - A TUI shows the last saved snapshot at once, without a network call.
   When the daemon goes away, the TUI shows `disconnected` and reconnects on
   its own.
+
+### Demo recording
+
+`docs/demo.gif` is recorded with [VHS](https://github.com/charmbracelet/vhs)
+from `docs/demo/demo.tape`. The tape builds ghwatch and a demo daemon
+(`docs/demo/main.go`): the real daemon with a scripted PR source instead of
+the GitHub API. Every recording then tells the same story, needs no
+network access, and leaves your watchlist and running daemon alone. To
+re-record after a UI change:
+
+```sh
+vhs docs/demo/demo.tape
+```
+
+This needs VHS 0.8 or later (with `ttyd` and `ffmpeg`), and the Nerd Font
+named in the tape (JetBrainsMono Nerd Font by default).
 
 ### Code layout
 
