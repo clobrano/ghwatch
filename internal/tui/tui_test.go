@@ -89,24 +89,24 @@ func TestView(t *testing.T) {
 	// header; the first failure is selected.
 	want := []string{" Failed · 1", "▸✗ e2e-aws-ovn", " Running · 2", " ● e2e-metal-ipi", " ◌ tide", " Passed · 1", " ✓ lint"}
 	for i, prefix := range want {
-		if !strings.HasPrefix(rows[5+i], prefix) {
-			t.Errorf("row %d = %q, want prefix %q", 5+i, rows[5+i], prefix)
+		if !strings.HasPrefix(rows[6+i], prefix) {
+			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
 		}
 	}
-	if !strings.Contains(rows[11], "2m") {
-		t.Errorf("lint row lacks its duration: %q", rows[11])
+	if !strings.Contains(rows[12], "2m") {
+		t.Errorf("lint row lacks its duration: %q", rows[12])
 	}
 }
 
 func TestTabOverflowKeepsActiveVisible(t *testing.T) {
 	m, _ := newModel()
 	keys(m, "3")
-	bar := m.View(30, 10)[0]
+	bar := m.View(30, 10)[1]
 	if !strings.Contains(bar, "osac#58") || !strings.HasPrefix(bar, "‹") {
 		t.Errorf("tab bar = %q", bar)
 	}
 	keys(m, "1")
-	bar = m.View(30, 10)[0]
+	bar = m.View(30, 10)[1]
 	if !strings.Contains(bar, "#123") || !strings.HasSuffix(strings.TrimRight(bar, " "), "›") {
 		t.Errorf("tab bar = %q", bar)
 	}
@@ -269,7 +269,7 @@ func TestTextHelpers(t *testing.T) {
 func TestHelpFitsInColumns(t *testing.T) {
 	m, _ := newModel()
 	keys(m, "?")
-	screen := strings.Join(m.View(150, 16), "\n")
+	screen := strings.Join(m.View(150, 17), "\n")
 	for _, r := range helpRows {
 		if !strings.Contains(screen, r[1]) {
 			t.Errorf("help lacks %q:\n%s", r[1], screen)
@@ -291,8 +291,8 @@ func TestSelectionFollowsCheckAcrossGroups(t *testing.T) {
 		t.Fatalf("selection moved to %s", c.Name)
 	}
 	rows := m.View(90, 16)
-	if !strings.HasPrefix(rows[5], " Failed · 2") || !strings.HasPrefix(rows[7], "▸✗ e2e-metal-ipi") {
-		t.Errorf("rows =\n%s", strings.Join(rows[5:9], "\n"))
+	if !strings.HasPrefix(rows[6], " Failed · 2") || !strings.HasPrefix(rows[8], "▸✗ e2e-metal-ipi") {
+		t.Errorf("rows =\n%s", strings.Join(rows[6:10], "\n"))
 	}
 
 	// On a new head the check is gone: the selection keeps its position.
@@ -314,14 +314,14 @@ func TestGroupScrollShowsHeader(t *testing.T) {
 	}
 	keys(m, "G")
 	rows = m.View(90, 12)
-	body := strings.Join(rows[5:10], "\n")
+	body := strings.Join(rows[6:11], "\n")
 	if !strings.Contains(body, "Passed · 1") || !strings.Contains(body, "▸✓ lint") {
 		t.Errorf("body =\n%s", body)
 	}
 	keys(m, "g", "g")
 	rows = m.View(90, 12)
-	if !strings.HasPrefix(rows[5], " Failed · 1") {
-		t.Errorf("scrolled back, first body row = %q", rows[5])
+	if !strings.HasPrefix(rows[6], " Failed · 1") {
+		t.Errorf("scrolled back, first body row = %q", rows[6])
 	}
 }
 
@@ -333,8 +333,8 @@ func TestCancelledGroupAtBottom(t *testing.T) {
 	rows := m.View(90, 20)
 	want := []string{" Failed · 1", "▸✗ e2e-aws-ovn", " Running · 2", " ● e2e-metal-ipi", " ◌ tide", " Passed · 1", " ✓ lint", " Cancelled · 1", " ⊘ stale-job"}
 	for i, prefix := range want {
-		if !strings.HasPrefix(rows[5+i], prefix) {
-			t.Errorf("row %d = %q, want prefix %q", 5+i, rows[5+i], prefix)
+		if !strings.HasPrefix(rows[6+i], prefix) {
+			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
 		}
 	}
 }
@@ -353,14 +353,14 @@ func TestJobBell(t *testing.T) {
 	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
 	m.SetSnapshot(s)
 	rows := m.View(90, 16)
-	if !strings.HasPrefix(rows[8], "▸● e2e-metal-ipi "+bellIcon+" ") || !strings.Contains(rows[8], "running 23m") {
-		t.Errorf("watched job row = %q", rows[8])
+	if !strings.HasPrefix(rows[9], "▸● e2e-metal-ipi "+bellIcon+" ") || !strings.Contains(rows[9], "running 23m") {
+		t.Errorf("watched job row = %q", rows[9])
 	}
-	if strings.Contains(rows[6], bellIcon) {
-		t.Errorf("unwatched job has a bell: %q", rows[6])
+	if strings.Contains(rows[7], bellIcon) {
+		t.Errorf("unwatched job has a bell: %q", rows[7])
 	}
-	if !strings.Contains(rows[0], "#123 lease-race "+bellIcon) || !strings.Contains(rows[3], bellIcon+" 1 job") || strings.Contains(rows[3], "alerts on") {
-		t.Errorf("tab = %q, header = %q", rows[0], rows[3])
+	if !strings.Contains(rows[1], "#123 lease-race "+bellIcon) || !strings.Contains(rows[4], bellIcon+" 1 job") || strings.Contains(rows[4], "alerts on") {
+		t.Errorf("tab = %q, header = %q", rows[1], rows[4])
 	}
 	keys(m, "b")
 	if !*be.sent[0].On || *be.sent[1].On {
@@ -380,5 +380,46 @@ func TestOpenShowsFeedback(t *testing.T) {
 	m.Result("", errors.New("xdg-open: exit status 4"))
 	if !strings.Contains(m.View(90, 16)[15], "xdg-open: exit status 4") {
 		t.Errorf("browser failure not shown: %q", m.View(90, 16)[15])
+	}
+}
+
+func TestTitleBar(t *testing.T) {
+	m := NewModel(&fakeBackend{})
+	m.now = func() time.Time { return now }
+	m.Color = false
+	if got := m.View(80, 10)[0]; !strings.HasPrefix(got, " GHWATCH  GitHub PR watcher") || !strings.Contains(got, "waiting for the daemon") {
+		t.Errorf("before any state: %q", got)
+	}
+
+	m, _ = newModel()
+	s := snapshot()
+	s.Items[1].WatchedChecks = []string{"unit"}
+	s.PolledAt = now.Add(-42 * time.Second)
+	m.SetSnapshot(s)
+	got := m.View(100, 16)[0]
+	for _, want := range []string{" GHWATCH  GitHub PR watcher · 3 PRs ✗1 ●1 ⮌1 · " + bellIcon + " 2", "polled 42s ago "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("title = %q, lacks %q", got, want)
+		}
+	}
+	if strings.Contains(got, "muted") {
+		t.Errorf("title shows muted: %q", got)
+	}
+
+	s.Settings.Mute = true
+	s.Stale = true
+	s.Items = s.Items[:1]
+	m.SetSnapshot(s)
+	got = m.View(100, 16)[0]
+	for _, want := range []string{"watcher · 1 PR ✗1", "muted", "last poll 42s ago "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("title = %q, lacks %q", got, want)
+		}
+	}
+
+	s.PolledAt = time.Time{}
+	m.SetSnapshot(s)
+	if got := m.View(100, 16)[0]; !strings.Contains(got, "not polled yet") {
+		t.Errorf("title = %q", got)
 	}
 }

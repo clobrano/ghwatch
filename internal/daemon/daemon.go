@@ -258,6 +258,8 @@ func (d *Daemon) Poll(ctx context.Context) (*github.RateLimit, error) {
 	d.snap.Error = ""
 	if err != nil {
 		d.snap.Error = err.Error()
+	} else {
+		d.snap.PolledAt = d.now()
 	}
 	d.publishLocked()
 	d.mu.Unlock()
@@ -417,6 +419,7 @@ func (d *Daemon) loadState() {
 		return
 	}
 	d.snap.Items = s.Items
+	d.snap.PolledAt = s.PolledAt
 	d.snap.Settings.Mute = s.Settings.Mute
 	for k, v := range s.Settings.Events {
 		d.snap.Settings.Events[k] = v

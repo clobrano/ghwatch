@@ -8,6 +8,12 @@ import (
 	"github.com/clobrano/ghwatch/internal/model"
 )
 
+// appTitle is the app name as shown in the title bar.
+const appTitle = "GHWATCH"
+
+// appTagline follows the name in the title bar.
+const appTagline = "GitHub PR watcher"
+
 // bellIcon marks alerts: the Nerd Fonts codicon bell (nf-cod-bell).
 const bellIcon = "\ueaa2"
 
@@ -42,11 +48,11 @@ func (m *Model) View(width, height int) []string {
 }
 
 func (m *Model) lines(w, h int) []line {
-	if w < 20 || h < 7 {
+	if w < 20 || h < 8 {
 		return []line{{{"ghwatch: terminal too small", ""}}}
 	}
 	rule := line{{strings.Repeat("─", w), sDim}}
-	out := []line{m.tabBar(w), rule}
+	out := []line{m.titleBar(w), m.tabBar(w), rule}
 	out = append(out, m.header(w)...)
 	out = append(out, rule)
 	body := h - len(out) - 2
@@ -69,6 +75,58 @@ func (m *Model) lines(w, h int) []line {
 		}
 	}
 	return append(out, rule, m.footer(w))
+}
+
+// titleBar is the top line: the app name, how many PRs are watched and
+// in which state, how many have alerts, and when GitHub was last polled.
+func (m *Model) titleBar(w int) line {
+	left := line{{" " + appTitle, sBold + sCyan}, {"  " + appTagline, sDim}}
+	if m.snap == nil {
+		return spread(left, line{{"waiting for the daemon… ", sDim}}, w)
+	}
+	items := m.items()
+	prs := "PRs"
+	if len(items) == 1 {
+		prs = "PR"
+	}
+	left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%d %s", len(items), prs), ""})
+	counts := map[model.State]int{}
+	alerts := 0
+	for _, it := range items {
+		st := model.ItemState(it)
+		if st == model.Pending {
+			st = model.Running
+		}
+		if st == model.Closed {
+			st = model.Merged
+		}
+		counts[st]++
+		if it.Alerts || len(it.WatchedChecks) > 0 {
+			alerts++
+		}
+	}
+	for _, st := range []model.State{model.Failed, model.Running, model.Passed, model.Merged} {
+		if counts[st] > 0 {
+			left = append(left, seg{" ", ""}, seg{fmt.Sprintf("%s%d", st.Icon(), counts[st]), stateStyle(st)})
+		}
+	}
+	if alerts > 0 {
+		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s %d", bellIcon, alerts), sCyan})
+	}
+	if m.snap.Settings.Mute {
+		left = append(left, seg{" · ", sDim}, seg{"muted", sYellow})
+	}
+
+	var right line
+	switch {
+	case m.snap.PolledAt.IsZero():
+		right = line{{"not polled yet ", sDim}}
+	case m.snap.Stale:
+		right = line{{"last poll " + human(m.now().Sub(m.snap.PolledAt)) + " ago ", sYellow}}
+	default:
+		right = line{{"polled " + human(m.now().Sub(m.snap.PolledAt)) + " ago ", sDim}}
+	}
+	return spread(left, right, w)
 }
 
 // tabLabels builds the label of every tab.
@@ -147,7 +205,7 @@ func isNumeric(s string) bool {
 func (m *Model) tabBar(w int) line {
 	labels := m.tabLabels()
 	if len(labels) == 0 {
-		return line{{" ghwatch", sBold}, {" · no watched items", sDim}}
+		return line{{" no watched items", sDim}}
 	}
 	sep := seg{"│", sDim}
 	width := func(from, to int) int { // cells for labels[from..to]

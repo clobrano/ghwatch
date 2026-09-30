@@ -8,7 +8,8 @@ changing the meaning of a field bumps `schema`.
 ```jsonc
 {
   "schema": 1,
-  "generated_at": "2026-09-30T10:42:00Z",
+  "generated_at": "2026-09-30T10:42:00Z", // last change of any kind
+  "polled_at": "2026-09-30T10:42:00Z",    // last successful poll (omitted before the first)
   "stale": false,              // last poll failed; items are the last known state
   "error": "",                 // why, when stale
   "settings": {

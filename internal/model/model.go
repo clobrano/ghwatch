@@ -180,10 +180,13 @@ func DefaultSettings() Settings {
 type Snapshot struct {
 	Schema      int       `json:"schema"`
 	GeneratedAt time.Time `json:"generated_at"`
-	Stale       bool      `json:"stale"`
-	Error       string    `json:"error,omitempty"`
-	Items       []Item    `json:"items"`
-	Settings    Settings  `json:"settings"`
+	// PolledAt is when GitHub was last polled successfully; zero before
+	// the first successful poll.
+	PolledAt time.Time `json:"polled_at,omitzero"`
+	Stale    bool      `json:"stale"`
+	Error    string    `json:"error,omitempty"`
+	Items    []Item    `json:"items"`
+	Settings Settings  `json:"settings"`
 }
 
 // Find returns the item with the given ID, or nil.

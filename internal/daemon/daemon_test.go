@@ -62,6 +62,24 @@ func (r *recorder) Notify(_ context.Context, n notify.Notification) error {
 	return nil
 }
 
+// settle is how long to wait before checking that nothing was sent.
+const settle = 100 * time.Millisecond
+
+// wait returns the notifications once there are at least n of them.
+// Notifications are sent just after the state is broadcast, so a client
+// can see the new state a moment before they are recorded.
+func (r *recorder) wait(t *testing.T, n int) []notify.Notification {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		notes := r.all()
+		if len(notes) >= n || time.Now().After(deadline) {
+			return notes
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (r *recorder) all() []notify.Notification {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -160,7 +178,9 @@ func TestMultiClient(t *testing.T) {
 	}()
 
 	c1, c2 := dial(t, paths), dial(t, paths)
-	polled := func(s *model.Snapshot) bool { return len(s.Items) == 1 && s.Items[0].HeadSHA == "a" }
+	polled := func(s *model.Snapshot) bool {
+		return len(s.Items) == 1 && s.Items[0].HeadSHA == "a" && !s.PolledAt.IsZero()
+	}
 	waitFor(t, c1, "first poll", polled)
 	waitFor(t, c2, "first poll", polled)
 	c3 := dial(t, paths)
@@ -184,6 +204,7 @@ func TestMultiClient(t *testing.T) {
 	failed := func(s *model.Snapshot) bool { return len(s.Items) == 1 && s.Items[0].State == model.Failed }
 	waitFor(t, c1, "failure", failed)
 	waitFor(t, c2, "failure", failed)
+	time.Sleep(settle) // let a wrongly sent notification arrive
 	if n := len(rec.all()); n != 0 {
 		t.Errorf("sent %d notifications with alerts off", n)
 	}
@@ -204,7 +225,7 @@ func TestMultiClient(t *testing.T) {
 	e2eFailed := func(s *model.Snapshot) bool { return len(s.Items) == 1 && s.Items[0].Checks[1].State == model.Failed }
 	waitFor(t, c1, "e2e failure", e2eFailed)
 	waitFor(t, c3, "e2e failure", e2eFailed)
-	notes := rec.all()
+	notes := rec.wait(t, 1)
 	if len(notes) != 1 || notes[0].Event.Type != model.EventCheckFailed || notes[0].URL != "https://prow/e2e" {
 		t.Errorf("notifications = %+v, want one e2e failure", notes)
 	}
@@ -217,6 +238,7 @@ func TestMultiClient(t *testing.T) {
 	waitFor(t, c1, "new head", func(s *model.Snapshot) bool {
 		return s.Items[0].HeadSHA == "new" && !s.Settings.Events[model.EventRestarted]
 	})
+	time.Sleep(settle) // let a wrongly sent notification arrive
 	if n := len(rec.all()); n != 1 {
 		t.Errorf("disabled event type notified: %+v", rec.all())
 	}
@@ -328,7 +350,7 @@ func TestJobAlerts(t *testing.T) {
 	// watched one passing notifies.
 	set("a", model.Failed, model.Passed)
 	poll("results", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Passed })
-	notes := rec.all()
+	notes := rec.wait(t, 1)
 	if len(notes) != 1 || notes[0].Title != "✓ e2e passed" || notes[0].URL != "https://prow/e2e" {
 		t.Fatalf("notifications = %+v, want one for e2e passing", notes)
 	}
@@ -340,7 +362,7 @@ func TestJobAlerts(t *testing.T) {
 	poll("new head", func(s *model.Snapshot) bool { return s.Items[0].HeadSHA == "b" && s.Items[0].Alerts })
 	set("b", model.Running, model.Failed)
 	poll("e2e failure", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Failed })
-	notes = rec.all()
+	notes = rec.wait(t, 2)
 	var e2eFailed int
 	for _, n := range notes {
 		if n.Event.Type == model.EventCheckFailed && n.Event.Check == "e2e" {
@@ -356,6 +378,7 @@ func TestJobAlerts(t *testing.T) {
 	before := len(rec.all())
 	set("b", model.Running, model.Running)
 	poll("rerun", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Running && s.Settings.Mute })
+	time.Sleep(settle) // let a wrongly sent notification arrive
 	if len(rec.all()) != before {
 		t.Errorf("muted, but notified: %+v", rec.all()[before:])
 	}

@@ -8,6 +8,7 @@ tabbed TUIs and tmux status lines read its state, and it can send a desktop
 notification when a check changes state. Notifications are opt-in per PR.
 
 ```
+ GHWATCH  GitHub PR watcher · 4 PRs ✗1 ●2 ✓1 ·  1      polled 12s ago
  ✗ #123 lease-race  │ ● #131 sbd-timeout │ ✓ #140 docs │ ● osac#58
 ─────────────────────────────────────────────────────────────────────
  org/repo#123  Fix lease renewal race                    @clobrano
@@ -108,6 +109,11 @@ last poll failed.
 | `R` | re-run failed CI: comment `/retest` for Prow, re-run failed Actions jobs |
 | `?` | help |
 | `q` | quit this TUI (the daemon keeps running) |
+
+The top line shows the app name and how many PRs are watched and in which state (failed,
+running, passed, merged or closed), how many have alerts, whether
+notifications are muted, and when GitHub was last polled. It turns yellow
+("last poll … ago") while polling fails.
 
 Tabs keep the order in which the PRs were added. Checks are split into
 groups, each under a header with its count: **Failed**, then **Running**
