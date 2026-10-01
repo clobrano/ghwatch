@@ -356,7 +356,7 @@ func TestJobAlerts(t *testing.T) {
 	set("a", model.Failed, model.Passed)
 	poll("results", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Passed })
 	notes := rec.wait(t, 1)
-	if len(notes) != 1 || notes[0].Title != "✓ e2e passed" || notes[0].URL != "https://prow/e2e" {
+	if len(notes) != 1 || notes[0].Title != "√ e2e passed" || notes[0].URL != "https://prow/e2e" {
 		t.Fatalf("notifications = %+v, want one for e2e passing", notes)
 	}
 

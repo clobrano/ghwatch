@@ -38,6 +38,20 @@ can be swapped out.
 
 ## Other choices
 
+- **Icon sets**: a terminal program can't ask whether a glyph will be drawn
+  (a missing glyph still takes one cell), so the icons are a setting.
+  `fancy` (default) uses Unicode symbols (`✗` `✓` `●` `◌` `–` `⊘`) that rely
+  on the terminal borrowing glyphs from other fonts. `safe` uses only
+  characters that common monospace fonts have (checked against DejaVu Sans
+  Mono, Noto Sans Mono, Liberation Mono, Fira Code, JetBrains Mono, Source
+  Code Pro and Ubuntu Mono): `×` `√` `*` `o` `–` `ø`. ASCII (`x` `v` `*` `o`
+  `-` `/`) is chosen automatically in the two detectable cases, a non-UTF-8
+  locale and the Linux console. PR states are letters in every set (`M`
+  merged, `Q` queued, `C` closed). UI markers always use safe characters:
+  `›` for the selection, `!` for stale/errors. Only the alert bell is a Nerd
+  Font glyph. A test in `internal/model` keeps the safe and ASCII sets to
+  the allowed characters.
+
 - **Daemon lifetime**: a daemon auto-started by a TUI exits 10 seconds
   after its last client disconnects (`-idle-exit 10s`). This keeps a
   stale daemon from outliving a rebuild. It narrows goal 4

@@ -56,3 +56,18 @@ func TestPaths(t *testing.T) {
 		t.Errorf("paths = %+v", p)
 	}
 }
+
+func TestIconsSetting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if cfg, _ := Load(path); cfg.Icons != "fancy" {
+		t.Errorf("default icons = %q", cfg.Icons)
+	}
+	os.WriteFile(path, []byte("[ui]\nicons = \"safe\"\n"), 0o600)
+	if cfg, err := Load(path); err != nil || cfg.Icons != "safe" {
+		t.Errorf("safe: %q, %v", cfg.Icons, err)
+	}
+	os.WriteFile(path, []byte("icons = \"emoji\"\n"), 0o600)
+	if _, err := Load(path); err == nil {
+		t.Error("unknown icon set accepted")
+	}
+}

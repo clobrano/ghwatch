@@ -34,7 +34,7 @@ func TestStatus(t *testing.T) {
 	if err := cmdStatus(paths, cfg, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); got != "PR ●3 ✓1 ⧗1 ✗1 ⚠\n" {
+	if got := out.String(); got != "PR *3 √1 Q1 ×1 !\n" {
 		t.Errorf("status = %q", got)
 	}
 
@@ -54,7 +54,7 @@ func TestStatus(t *testing.T) {
 	os.Remove(paths.Snapshot())
 	out.Reset()
 	cmdStatus(paths, cfg, nil, &out)
-	if got := out.String(); got != "PR ⚠\n" {
+	if got := out.String(); got != "PR !\n" {
 		t.Errorf("status without snapshot = %q", got)
 	}
 }
@@ -73,7 +73,7 @@ func TestListAndChecksOutput(t *testing.T) {
 	if err := cmdList(paths, &out); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); !strings.Contains(got, "pr:o/r#1  ✓ passed  Fix") || !strings.Contains(got, "pr:o/r#2  ?") {
+	if got := out.String(); !strings.Contains(got, "pr:o/r#1  √ passed  Fix") || !strings.Contains(got, "pr:o/r#2  ?") {
 		t.Errorf("ls =\n%s", got)
 	}
 
@@ -88,7 +88,7 @@ func TestListAndChecksOutput(t *testing.T) {
 	if strings.Contains(out.String(), "-7s") {
 		t.Errorf("negative duration printed:\n%s", out.String())
 	}
-	for _, want := range []string{"✓ o/r#1 Fix", "head abcdef1", "2/2 done", "✓ unit", "1m30s", "Actions", "required", "https://x/1"} {
+	for _, want := range []string{"√ o/r#1 Fix", "head abcdef1", "2/2 done", "√ unit", "1m30s", "Actions", "required", "https://x/1"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("checks output lacks %q:\n%s", want, out.String())
 		}
