@@ -267,7 +267,8 @@ func TestCheckRunLinksToGitHub(t *testing.T) {
 	if !strings.HasPrefix(konflux.DetailsURL, "https://konflux-ui.apps.") {
 		t.Errorf("Konflux details URL = %q", konflux.DetailsURL)
 	}
-	if got[1].URL != "https://github.com/osac-project/osac/pull/1228/checks?check_run_id=7" || got[1].DetailsURL != "https://github.com/osac-project/osac/actions/runs/42/job/7" {
+	// An Actions job links to its job page, as on GitHub's PR page.
+	if got[1].URL != "https://github.com/osac-project/osac/actions/runs/42/job/7?pr=1228" || got[1].DetailsURL != "" {
 		t.Errorf("Actions check = %+v", got[1])
 	}
 	// A commit status has no GitHub check page: it keeps its target URL.
@@ -303,5 +304,23 @@ func TestLabels(t *testing.T) {
 	it := p.toItem("pr:o/r#1", "o/r")
 	if len(it.Labels) != 2 || it.Labels[0] != (model.Label{Name: "lgtm", Color: "0e8a16"}) || it.Labels[1].Name != "needs-rebase" {
 		t.Errorf("labels = %+v", it.Labels)
+	}
+}
+
+func TestActionsJobLink(t *testing.T) {
+	// osac-project/osac#1332: GitHub links this job to its Actions page.
+	var nodes []json.RawMessage
+	json.Unmarshal([]byte(`[
+	 {"__typename":"CheckRun","name":"VMaaS full install test","status":"COMPLETED","conclusion":"FAILURE","databaseId":110291378942,
+	  "detailsUrl":"https://github.com/osac-project/osac/actions/runs/36790862965/job/110291378942","checkSuite":{"app":{"slug":"github-actions"}}},
+	 {"__typename":"CheckRun","name":"already","status":"COMPLETED","conclusion":"SUCCESS","databaseId":2,
+	  "detailsUrl":"https://github.com/o/r/actions/runs/1/job/2?pr=1332","checkSuite":{"app":{"slug":"github-actions"}}}
+	]`), &nodes)
+	got := Normalize(nodes, "https://github.com/osac-project/osac/pull/1332")
+	if got[0].URL != "https://github.com/osac-project/osac/actions/runs/36790862965/job/110291378942?pr=1332" {
+		t.Errorf("job link = %q", got[0].URL)
+	}
+	if got[1].URL != "https://github.com/o/r/actions/runs/1/job/2?pr=1332" {
+		t.Errorf("link with pr already set = %q", got[1].URL)
 	}
 }
