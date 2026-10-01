@@ -303,7 +303,7 @@ func (m *Model) header(w int) []line {
 		add(seg{fmt.Sprintf("%s %d %s", bellIcon, n, jobs), sCyan})
 	}
 	if it.Error != "" {
-		add(seg{"⚠ " + it.Error, sRed})
+		add(seg{"! " + it.Error, sRed})
 	}
 	if len(l2) > 0 {
 		l2 = append(line{{" ", ""}}, l2...)
@@ -514,7 +514,7 @@ func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, an
 	nameW := max(w-3-1-timeW-2-srcW-optW, 8)
 	marker, nameStyle := seg{" ", ""}, ""
 	if selected {
-		marker, nameStyle = seg{"▸", sCyan + sBold}, sBold
+		marker, nameStyle = seg{"›", sCyan + sBold}, sBold
 	}
 	// The name cell ends with a bell when the job has its own alerts.
 	name := line{{" " + padRight(c.Name, nameW), nameStyle}}
@@ -574,7 +574,7 @@ func (m *Model) eventsBody() []line {
 	}
 	row := func(i int, text string) line {
 		if i == m.evSel {
-			return line{{" ▸ ", sCyan + sBold}, {text, sBold}}
+			return line{{" › ", sCyan + sBold}, {text, sBold}}
 		}
 		return line{{"   ", ""}, {text, ""}}
 	}
@@ -649,9 +649,9 @@ func (m *Model) footer(w int) line {
 	var left line
 	switch {
 	case m.mode == modeAdd:
-		left = line{{" Add PR (URL or owner/repo#N): ", sBold}, {string(m.input) + "▏", ""}}
+		left = line{{" Add PR (URL or owner/repo#N): ", sBold}, {string(m.input) + "_", ""}}
 	case m.mode == modeFind:
-		left = line{{" /", sBold}, {string(m.input) + "▏", ""}, {"   ↑/↓ choose · enter select · esc cancel", sDim}}
+		left = line{{" /", sBold}, {string(m.input) + "_", ""}, {"   ↑/↓ choose · enter select · esc cancel", sDim}}
 	case m.mode == modeConfirm:
 		left = line{{" " + m.confirmMsg + " ", sBold}, {"[y/N]", sYellow}}
 	case m.flash != "" && m.now().Before(m.flashUntil):
@@ -661,7 +661,7 @@ func (m *Model) footer(w int) line {
 		}
 		left = line{{" " + m.flash, style}}
 	case m.snap != nil && m.snap.Stale && m.snap.Error != "":
-		left = line{{" ⚠ " + m.snap.Error, sYellow}}
+		left = line{{" ! " + m.snap.Error, sYellow}}
 	default:
 		left = line{{" h/l tab · j/k check · enter job · o PR · n/b alerts · N events · ?", sDim}}
 	}

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -132,5 +133,21 @@ func TestItemStateQueued(t *testing.T) {
 	it.MergeQueue = nil
 	if got := ItemState(it); got != Passed {
 		t.Errorf("after leaving the queue: %s, want passed", got)
+	}
+}
+
+// TestIconsAreWidelyAvailable keeps state icons to characters that common
+// monospace fonts have (checked against DejaVu Sans Mono, Noto Sans Mono,
+// Liberation Mono, Fira Code, JetBrains Mono, Source Code Pro and Ubuntu
+// Mono): ASCII, plus a few symbols present in all or nearly all of them.
+// The icons carry meaning, so they must not rely on font fallback.
+func TestIconsAreWidelyAvailable(t *testing.T) {
+	allowed := "●○√×–ø"
+	for _, s := range []State{Pending, Running, Passed, Failed, Skipped, Cancelled, Merged, Closed, Queued} {
+		for _, r := range s.Icon() {
+			if r >= 0x80 && !strings.ContainsRune(allowed, r) {
+				t.Errorf("%s icon %q uses %U, which many fonts lack", s, s.Icon(), r)
+			}
+		}
 	}
 }

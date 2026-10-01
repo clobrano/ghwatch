@@ -37,23 +37,23 @@ const (
 func (s State) Icon() string {
 	switch s {
 	case Pending:
-		return "◌"
+		return "○"
 	case Running:
 		return "●"
 	case Passed:
-		return "✓"
+		return "√"
 	case Failed:
-		return "✗"
+		return "×"
 	case Skipped:
 		return "–"
 	case Cancelled:
-		return "⊘"
+		return "ø"
 	case Merged:
-		return "⮌"
+		return "M"
 	case Closed:
-		return "⊗"
+		return "C"
 	case Queued:
-		return "⧗"
+		return "Q"
 	}
 	return "?"
 }

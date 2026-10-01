@@ -39,7 +39,7 @@ ghwatch rm org/repo#123
 ghwatch checks org/repo#123                         # fetch and print checks now
 ghwatch                                             # open the TUI
 ghwatch -serve                                      # run the daemon in the foreground
-ghwatch status                                      # one line, e.g. "PR ●3 ✓5 ✗1"
+ghwatch status                                      # one line, e.g. "PR ●3 √5 ×1"
 ghwatch status -json                                # the full state snapshot
 ```
 
@@ -68,7 +68,7 @@ set -g status-right '#(ghwatch status) %H:%M'
 set -g status-interval 10
 ```
 
-A trailing `⚠` means the state is stale: the daemon is not running, or its
+A trailing `!` means the state is stale: the daemon is not running, or its
 last poll failed.
 
 ### TUI keys
@@ -106,7 +106,7 @@ first seen. When a check changes group, the selection follows it.
 
 The PR's labels show under its header as chips in their GitHub colors.
 
-A PR waiting in GitHub's merge queue shows `⧗` on its tab. Its header
+A PR waiting in GitHub's merge queue shows `Q` on its tab. Its header
 starts with the queue state, its place in line, how long it has waited
 and GitHub's estimate of the time left, e.g. `in merge queue, checks
 running, 2nd in line, 12m ago, ~8m left`. The queue is also the first row of
@@ -152,7 +152,7 @@ Everything lives in plain files:
 ```toml
 interval = "60s"            # poll interval (minimum 10s)
 browser = "firefox"         # default: $BROWSER, then xdg-open; "%s" is replaced by the URL
-status_template = 'PR {{if .Running}}●{{.Running}} {{end}}{{if .Passed}}✓{{.Passed}} {{end}}{{if .Failed}}✗{{.Failed}} {{end}}{{if .Stale}}⚠{{end}}'
+status_template = 'PR {{if .Running}}●{{.Running}} {{end}}{{if .Passed}}√{{.Passed}} {{end}}{{if .Failed}}×{{.Failed}} {{end}}{{if .Stale}}!{{end}}'
 
 [notify]
 backend = "desktop"         # desktop | exec | none

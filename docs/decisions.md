@@ -38,6 +38,17 @@ can be swapped out.
 
 ## Other choices
 
+- **Icons that every font has**: state icons and UI markers carry meaning,
+  so they use only characters found in common monospace fonts (checked
+  against DejaVu Sans Mono, Noto Sans Mono, Liberation Mono, Fira Code,
+  JetBrains Mono, Source Code Pro and Ubuntu Mono). They don't rely on the
+  terminal borrowing glyphs from other fonts. Jobs use `×` failed, `√`
+  passed, `●` running, `○` pending, `–` skipped and `ø` cancelled. PR
+  states are letters: `M` merged, `Q` queued, `C` closed. The selection
+  marker is `›` and stale/errors are marked `!`. Only the alert bell is a
+  Nerd Font glyph; without one it shows as a box. A test in
+  `internal/model` keeps state icons to the allowed characters.
+
 - **Daemon lifetime**: a daemon auto-started by a TUI exits 10 seconds
   after its last client disconnects (`-idle-exit 10s`). This keeps a
   stale daemon from outliving a rebuild. It narrows goal 4
