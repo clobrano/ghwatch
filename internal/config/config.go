@@ -66,8 +66,9 @@ func (p Paths) Ensure() error {
 	return os.Chmod(p.RuntimeDir, 0o700)
 }
 
-// DefaultStatusTemplate renders e.g. "PR *3 √5 ×1".
-const DefaultStatusTemplate = `PR {{if .Running}}*{{.Running}} {{end}}{{if .Passed}}√{{.Passed}} {{end}}{{if .Queued}}Q{{.Queued}} {{end}}{{if .Failed}}×{{.Failed}} {{end}}{{if .Stale}}!{{end}}`
+// DefaultStatusTemplate renders e.g. "PR ●3 ✓5 ✗1", with the icons of the
+// configured set.
+const DefaultStatusTemplate = `PR {{if .Running}}{{icon "running"}}{{.Running}} {{end}}{{if .Passed}}{{icon "passed"}}{{.Passed}} {{end}}{{if .Queued}}{{icon "queued"}}{{.Queued}} {{end}}{{if .Failed}}{{icon "failed"}}{{.Failed}} {{end}}{{if .Stale}}!{{end}}`
 
 // Config is the content of config.toml.
 type Config struct {
@@ -84,6 +85,9 @@ type Config struct {
 	NotifyCommand string
 	// AutoStart lets clients spawn the daemon when it is not running.
 	AutoStart bool
+	// Icons is the icon set: "fancy" (Unicode symbols, the default) or
+	// "safe" (characters every common monospace font has).
+	Icons string
 }
 
 // Default returns the built-in configuration.
@@ -93,6 +97,7 @@ func Default() Config {
 		StatusTemplate: DefaultStatusTemplate,
 		Notifier:       "desktop",
 		AutoStart:      true,
+		Icons:          "fancy",
 	}
 }
 
@@ -134,6 +139,11 @@ func Load(path string) (Config, error) {
 			cfg.Notifier, err = asString(v)
 		case "notify_command", "notify.command":
 			cfg.NotifyCommand, err = asString(v)
+		case "icons", "ui.icons":
+			cfg.Icons, err = asString(v)
+			if err == nil && cfg.Icons != "fancy" && cfg.Icons != "safe" {
+				err = fmt.Errorf("want \"fancy\" or \"safe\"")
+			}
 		case "autostart", "daemon.autostart":
 			b, ok := v.(bool)
 			if !ok {

@@ -7,6 +7,7 @@
 package model
 
 import (
+	"fmt"
 	"sort"
 	"time"
 )
@@ -33,27 +34,50 @@ const (
 	Queued State = "queued"
 )
 
-// Icon returns the single-glyph representation of a state.
+// Icon sets. PR-level states (merged, closed, queued) are letters in
+// every set, so they never depend on the font.
+var (
+	// FancyIcons are Unicode symbols: the default. Several are missing
+	// from common monospace fonts and rely on the terminal borrowing
+	// them from another font.
+	FancyIcons = map[State]string{
+		Pending: "◌", Running: "●", Passed: "✓", Failed: "✗", Skipped: "–", Cancelled: "⊘",
+		Merged: "M", Closed: "C", Queued: "Q",
+	}
+	// SafeIcons are present in (nearly) all common monospace fonts.
+	SafeIcons = map[State]string{
+		Pending: "o", Running: "*", Passed: "√", Failed: "×", Skipped: "–", Cancelled: "ø",
+		Merged: "M", Closed: "C", Queued: "Q",
+	}
+	// ASCIIIcons are for terminals that cannot show anything else, such
+	// as a non-UTF-8 locale or the Linux console.
+	ASCIIIcons = map[State]string{
+		Pending: "o", Running: "*", Passed: "v", Failed: "x", Skipped: "-", Cancelled: "/",
+		Merged: "M", Closed: "C", Queued: "Q",
+	}
+)
+
+// IconSets maps the names accepted by UseIcons to their sets.
+var IconSets = map[string]map[State]string{"fancy": FancyIcons, "safe": SafeIcons, "ascii": ASCIIIcons}
+
+// icons is the set in use. It is chosen once, at startup.
+var icons = FancyIcons
+
+// UseIcons selects the icon set by name: fancy, safe or ascii.
+func UseIcons(name string) error {
+	set, ok := IconSets[name]
+	if !ok {
+		return fmt.Errorf("unknown icon set %q (want fancy or safe)", name)
+	}
+	icons = set
+	return nil
+}
+
+// Icon returns the single-glyph representation of a state in the icon set
+// in use.
 func (s State) Icon() string {
-	switch s {
-	case Pending:
-		return "o"
-	case Running:
-		return "*"
-	case Passed:
-		return "√"
-	case Failed:
-		return "×"
-	case Skipped:
-		return "–"
-	case Cancelled:
-		return "ø"
-	case Merged:
-		return "M"
-	case Closed:
-		return "C"
-	case Queued:
-		return "Q"
+	if i, ok := icons[s]; ok {
+		return i
 	}
 	return "?"
 }

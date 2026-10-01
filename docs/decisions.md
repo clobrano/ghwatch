@@ -38,16 +38,19 @@ can be swapped out.
 
 ## Other choices
 
-- **Icons that every font has**: state icons and UI markers carry meaning,
-  so they use only characters found in common monospace fonts (checked
-  against DejaVu Sans Mono, Noto Sans Mono, Liberation Mono, Fira Code,
-  JetBrains Mono, Source Code Pro and Ubuntu Mono). They don't rely on the
-  terminal borrowing glyphs from other fonts. Jobs use `×` failed, `√`
-  passed, `*` running, `o` pending, `–` skipped and `ø` cancelled. PR
-  states are letters: `M` merged, `Q` queued, `C` closed. The selection
-  marker is `›` and stale/errors are marked `!`. Only the alert bell is a
-  Nerd Font glyph; without one it shows as a box. A test in
-  `internal/model` keeps state icons to the allowed characters.
+- **Icon sets**: a terminal program can't ask whether a glyph will be drawn
+  (a missing glyph still takes one cell), so the icons are a setting.
+  `fancy` (default) uses Unicode symbols (`✗` `✓` `●` `◌` `–` `⊘`) that rely
+  on the terminal borrowing glyphs from other fonts. `safe` uses only
+  characters that common monospace fonts have (checked against DejaVu Sans
+  Mono, Noto Sans Mono, Liberation Mono, Fira Code, JetBrains Mono, Source
+  Code Pro and Ubuntu Mono): `×` `√` `*` `o` `–` `ø`. ASCII (`x` `v` `*` `o`
+  `-` `/`) is chosen automatically in the two detectable cases, a non-UTF-8
+  locale and the Linux console. PR states are letters in every set (`M`
+  merged, `Q` queued, `C` closed). UI markers always use safe characters:
+  `›` for the selection, `!` for stale/errors. Only the alert bell is a Nerd
+  Font glyph. A test in `internal/model` keeps the safe and ASCII sets to
+  the allowed characters.
 
 - **Daemon lifetime**: a daemon auto-started by a TUI exits 10 seconds
   after its last client disconnects (`-idle-exit 10s`). This keeps a

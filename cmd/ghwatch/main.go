@@ -8,6 +8,7 @@
 //	ghwatch ls               list watched PRs
 //	ghwatch status           one-line summary for the tmux status bar
 //	ghwatch checks <PR>      print the checks of a PR
+//	ghwatch icons            show the icon sets
 package main
 
 import (
@@ -46,6 +47,7 @@ const usage = `Usage:
   ghwatch ls                  list watched PRs
   ghwatch status [-json]      one-line summary, e.g. for tmux status-right
   ghwatch checks <PR>         print the checks of a PR, fetched now
+  ghwatch icons               show the icon sets, to pick one for config.toml
 
 Flags:
 `
@@ -72,6 +74,9 @@ func main() {
 	}
 	if *interval > 0 {
 		cfg.Interval = *interval
+	}
+	if err := model.UseIcons(iconSet(cfg.Icons, os.Getenv)); err != nil {
+		log.Fatal(err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -102,6 +107,8 @@ func main() {
 		err = cmdStatus(paths, cfg, args, os.Stdout)
 	case "checks":
 		err = cmdChecks(ctx, args, os.Stdout)
+	case "icons":
+		cmdIcons(cfg.Icons, iconSet(cfg.Icons, os.Getenv), os.Stdout)
 	case "help":
 		flag.Usage()
 	default:
@@ -300,7 +307,9 @@ func cmdStatus(paths config.Paths, cfg config.Config, args []string, w io.Writer
 	if *format != "" {
 		tmpl = *format
 	}
-	t, err := template.New("status").Parse(tmpl)
+	t, err := template.New("status").Funcs(template.FuncMap{
+		"icon": func(state string) string { return model.State(state).Icon() },
+	}).Parse(tmpl)
 	if err != nil {
 		return fmt.Errorf("status template: %w", err)
 	}
@@ -399,4 +408,54 @@ func printChecks(w io.Writer, it model.Item, now time.Time) {
 		fmt.Fprintf(tw, "%s %s\t%s\t%s\t%s\t%s\t%s\n", c.State.Icon(), c.Name, c.State, dur, c.Source, req, c.URL)
 	}
 	tw.Flush()
+}
+
+// iconSet returns the icon set to use: the configured one, or ASCII where
+// even the safe set may not show, i.e. with a non-UTF-8 locale or on the
+// Linux console. There is no reliable way to ask a terminal whether it
+// can draw a glyph, so the rest is up to the configuration.
+func iconSet(configured string, getenv func(string) string) string {
+	if getenv("TERM") == "linux" {
+		return "ascii"
+	}
+	for _, v := range []string{"LC_ALL", "LC_CTYPE", "LANG"} {
+		loc := getenv(v)
+		if loc == "" {
+			continue
+		}
+		l := strings.ToLower(loc)
+		if !strings.Contains(l, "utf-8") && !strings.Contains(l, "utf8") {
+			return "ascii"
+		}
+		break
+	}
+	return configured
+}
+
+// cmdIcons prints every icon set, so the user can see which one their
+// terminal shows well.
+func cmdIcons(configured, inUse string, w io.Writer) {
+	states := []model.State{model.Failed, model.Passed, model.Running, model.Pending, model.Skipped, model.Cancelled,
+		model.Merged, model.Closed, model.Queued}
+	fmt.Fprintf(w, "%-8s", "")
+	for _, s := range states {
+		fmt.Fprintf(w, " %-9s", s)
+	}
+	fmt.Fprintln(w)
+	for _, name := range []string{"fancy", "safe", "ascii"} {
+		mark := " "
+		if name == configured {
+			mark = ">"
+		}
+		fmt.Fprintf(w, "%s%-7s", mark, name)
+		for _, s := range states {
+			fmt.Fprintf(w, " %-9s", model.IconSets[name][s])
+		}
+		fmt.Fprintln(w)
+	}
+	fmt.Fprintln(w, "\n> configured. Set icons = \"fancy\" or \"safe\" in config.toml; ascii is used")
+	fmt.Fprintln(w, "  automatically with a non-UTF-8 locale or on the Linux console.")
+	if inUse != configured {
+		fmt.Fprintf(w, "  In use now: %s (this terminal's locale or TERM).\n", inUse)
+	}
 }

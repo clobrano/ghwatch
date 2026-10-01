@@ -136,18 +136,49 @@ func TestItemStateQueued(t *testing.T) {
 	}
 }
 
-// TestIconsAreWidelyAvailable keeps state icons to characters that common
-// monospace fonts have (checked against DejaVu Sans Mono, Noto Sans Mono,
-// Liberation Mono, Fira Code, JetBrains Mono, Source Code Pro and Ubuntu
-// Mono): ASCII, plus a few symbols present in all or nearly all of them.
-// The icons carry meaning, so they must not rely on font fallback.
+// TestIconsAreWidelyAvailable keeps the safe icons to characters that
+// common monospace fonts have (checked against DejaVu Sans Mono, Noto Sans
+// Mono, Liberation Mono, Fira Code, JetBrains Mono, Source Code Pro and
+// Ubuntu Mono): ASCII, plus a few symbols present in all of them. The
+// ASCII set must be pure ASCII.
 func TestIconsAreWidelyAvailable(t *testing.T) {
 	allowed := "√×–ø"
-	for _, s := range []State{Pending, Running, Passed, Failed, Skipped, Cancelled, Merged, Closed, Queued} {
-		for _, r := range s.Icon() {
+	for s, icon := range SafeIcons {
+		for _, r := range icon {
 			if r >= 0x80 && !strings.ContainsRune(allowed, r) {
-				t.Errorf("%s icon %q uses %U, which many fonts lack", s, s.Icon(), r)
+				t.Errorf("safe %s icon %q uses %U, which many fonts lack", s, icon, r)
 			}
 		}
+	}
+	for s, icon := range ASCIIIcons {
+		for _, r := range icon {
+			if r >= 0x80 {
+				t.Errorf("ascii %s icon %q is not ASCII", s, icon)
+			}
+		}
+	}
+}
+
+func TestIconSets(t *testing.T) {
+	defer UseIcons("fancy")
+	all := []State{Pending, Running, Passed, Failed, Skipped, Cancelled, Merged, Closed, Queued}
+	for name, set := range IconSets {
+		for _, s := range all {
+			if set[s] == "" {
+				t.Errorf("%s set has no icon for %s", name, s)
+			}
+		}
+	}
+	if Failed.Icon() != "✗" || Merged.Icon() != "M" {
+		t.Errorf("default set: failed %q, merged %q", Failed.Icon(), Merged.Icon())
+	}
+	if err := UseIcons("safe"); err != nil || Failed.Icon() != "×" {
+		t.Errorf("safe: %v, failed %q", err, Failed.Icon())
+	}
+	if err := UseIcons("ascii"); err != nil || Passed.Icon() != "v" {
+		t.Errorf("ascii: %v, passed %q", err, Passed.Icon())
+	}
+	if err := UseIcons("emoji"); err == nil {
+		t.Error("unknown set accepted")
 	}
 }
