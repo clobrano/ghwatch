@@ -373,7 +373,15 @@ func printChecks(w io.Writer, it model.Item, now time.Time) {
 	st := model.ItemState(it)
 	done, failed := model.Progress(it.Checks)
 	fmt.Fprintf(w, "%s %s#%d %s\n", st.Icon(), it.Repo, it.Number, it.Title)
-	fmt.Fprintf(w, "head %.7s · %d/%d done · %d failing\n\n", it.HeadSHA, done, len(it.Checks), failed)
+	fmt.Fprintf(w, "head %.7s · %d/%d done · %d failing\n", it.HeadSHA, done, len(it.Checks), failed)
+	if len(it.Labels) > 0 {
+		names := make([]string, len(it.Labels))
+		for i, l := range it.Labels {
+			names[i] = l.Name
+		}
+		fmt.Fprintf(w, "labels: %s\n", strings.Join(names, ", "))
+	}
+	fmt.Fprintln(w)
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	for _, c := range it.Checks {
 		var dur string

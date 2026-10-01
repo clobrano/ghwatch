@@ -176,6 +176,7 @@ func buildQuery(ids []string) (string, error) {
 const prSelection = `
       number title url state merged headRefName headRefOid baseRefName
       author { login }
+      labels(first: 20) { nodes { name color } }
       mergeQueueEntry { state position enqueuedAt estimatedTimeToMerge mergeQueue { url } }
       commits(last: 1) { nodes { commit {
         oid committedDate
@@ -211,6 +212,9 @@ type prNode struct {
 	Author      *struct {
 		Login string `json:"login"`
 	} `json:"author"`
+	Labels struct {
+		Nodes []model.Label `json:"nodes"`
+	} `json:"labels"`
 	MergeQueueEntry *struct {
 		State                string    `json:"state"`
 		Position             int       `json:"position"`
@@ -243,6 +247,7 @@ func (p *prNode) toItem(id, repo string) model.Item {
 	if p.Author != nil {
 		it.Author = p.Author.Login
 	}
+	it.Labels = p.Labels.Nodes
 	switch {
 	case p.Merged || p.State == "MERGED":
 		it.Lifecycle = model.LifeMerged

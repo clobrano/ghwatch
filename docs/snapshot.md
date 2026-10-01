@@ -40,6 +40,7 @@ changing the meaning of a field bumps `schema`.
       "eta_seconds": 480       // GitHub's estimate, when it gives one
     },
     "alerts": true,            // notifications on for this item (default false)
+    "labels": [{"name": "lgtm", "color": "0e8a16"}], // GitHub labels (omitted when none)
     "watched_checks": ["e2e"], // jobs with their own notifications (omitted when none)
     "error": "",               // last fetch of this item failed
     "updated_at": "…",

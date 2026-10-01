@@ -102,6 +102,7 @@ func (s *story) Fetch(_ context.Context, _ *github.Client, ids []string) ([]mode
 		switch it.Number {
 		case 123:
 			it.Title, it.Branch, it.HeadSHA = "Fix lease renewal race", "fix-lease-race", "a1b2c3d4e5f6"
+			it.Labels = []model.Label{{Name: "approved", Color: "0ffa16"}, {Name: "do-not-merge/hold", Color: "e11d21"}, {Name: "jira/valid-reference", Color: "ededed"}}
 			it.PushedAt = *ago(52 * time.Minute)
 			it.Checks = []model.Check{
 				check("lint", pr.SourceActions, model.Passed, 50*time.Minute, 2*time.Minute),
@@ -113,6 +114,7 @@ func (s *story) Fetch(_ context.Context, _ *github.Client, ids []string) ([]mode
 			}
 		case 131:
 			it.Title, it.Branch, it.HeadSHA = "Raise SBD watchdog timeout", "sbd-timeout", "b7c8d9e0f1a2"
+			it.Labels = []model.Label{{Name: "lgtm", Color: "15dd18"}, {Name: "approved", Color: "0ffa16"}}
 			it.PushedAt = *ago(3 * time.Hour)
 			it.Checks = []model.Check{
 				check("lint", pr.SourceActions, model.Passed, 3*time.Hour, 2*time.Minute),
