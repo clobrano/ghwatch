@@ -299,7 +299,8 @@ func (Kind) Retest(ctx context.Context, gh *github.Client, it model.Item) (strin
 		if c.Source == SourceProw {
 			prow = true
 		}
-		link := c.DetailsURL // the Actions job page, which names the run
+		link := c.DetailsURL // an app's own page; an Actions job's link is its job page
+
 		if link == "" {
 			link = c.URL
 		}

@@ -57,8 +57,8 @@ func Normalize(nodes []json.RawMessage, prURL string) []model.Check {
 		if err != nil || c.Name == "" {
 			continue
 		}
-		if head.Typename == "CheckRun" && prURL != "" && runID > 0 {
-			c.URL, c.DetailsURL = fmt.Sprintf("%s/checks?check_run_id=%d", prURL, runID), c.URL
+		if head.Typename == "CheckRun" && prURL != "" {
+			c.URL, c.DetailsURL = checkRunLink(c, runID, prURL)
 		}
 		key := c.Key()
 		if i, ok := latest[key]; ok {
@@ -73,6 +73,28 @@ func Normalize(nodes []json.RawMessage, prURL string) []model.Check {
 		out = append(out, c)
 	}
 	return out
+}
+
+// checkRunLink returns the link GitHub's pull request page uses for a check
+// run, and the app's own link when that differs. A GitHub Actions job links
+// to its job page with "?pr=<number>"; a check run from another app (such
+// as Konflux) links to its page on GitHub, which links on to the app.
+func checkRunLink(c model.Check, runID int64, prURL string) (url, details string) {
+	if c.Source == SourceActions && strings.Contains(c.URL, "/actions/runs/") {
+		number := prURL[strings.LastIndexByte(prURL, '/')+1:]
+		sep := "?"
+		if strings.Contains(c.URL, "?") {
+			sep = "&"
+		}
+		if strings.Contains(c.URL, "pr=") {
+			return c.URL, ""
+		}
+		return c.URL + sep + "pr=" + number, ""
+	}
+	if runID <= 0 {
+		return c.URL, ""
+	}
+	return fmt.Sprintf("%s/checks?check_run_id=%d", prURL, runID), c.URL
 }
 
 type checkRunProvider struct{}
