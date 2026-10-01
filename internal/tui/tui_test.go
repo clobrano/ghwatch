@@ -67,7 +67,7 @@ func TestView(t *testing.T) {
 	screen := strings.Join(m.View(90, 16), "\n")
 	for _, want := range []string{
 		"× #123 lease-race " + bellIcon,
-		"● #131 sbd-timeout",
+		"* #131 sbd-timeout",
 		"M osac#58 docs",
 		"org/repo#123  Fix lease renewal race",
 		"@clobrano",
@@ -87,7 +87,7 @@ func TestView(t *testing.T) {
 	}
 	// Failed first, then running (and pending), then passed, each under a
 	// header; the first failure is selected.
-	want := []string{" Failed · 1", "›× e2e-aws-ovn", " Running · 2", " ● e2e-metal-ipi", " ○ tide", " Passed · 1", " √ lint"}
+	want := []string{" Failed · 1", "›× e2e-aws-ovn", " Running · 2", " * e2e-metal-ipi", " o tide", " Passed · 1", " √ lint"}
 	for i, prefix := range want {
 		if !strings.HasPrefix(rows[6+i], prefix) {
 			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
@@ -198,7 +198,7 @@ func TestFind(t *testing.T) {
 	// Searches the jobs of the current tab, ignoring case; tabs stay put.
 	keys(m, "/", "M", "E", "T", "A", "L")
 	rows := m.View(90, 16)
-	if !strings.Contains(rows[6], "1 of 4 jobs match") || !strings.HasPrefix(rows[7], "›● e2e-metal-ipi") {
+	if !strings.Contains(rows[6], "1 of 4 jobs match") || !strings.HasPrefix(rows[7], "›* e2e-metal-ipi") {
 		t.Errorf("find list =\n%s", strings.Join(rows[6:9], "\n"))
 	}
 	if !strings.Contains(rows[15], "/METAL") {
@@ -365,7 +365,7 @@ func TestCancelledGroupAtBottom(t *testing.T) {
 	s.Items[0].Checks = append([]model.Check{{Name: "stale-job", Source: "Prow", State: model.Cancelled}}, s.Items[0].Checks...)
 	m.SetSnapshot(s)
 	rows := m.View(90, 20)
-	want := []string{" Failed · 1", "›× e2e-aws-ovn", " Running · 2", " ● e2e-metal-ipi", " ○ tide", " Passed · 1", " √ lint", " Cancelled · 1", " ø stale-job"}
+	want := []string{" Failed · 1", "›× e2e-aws-ovn", " Running · 2", " * e2e-metal-ipi", " o tide", " Passed · 1", " √ lint", " Cancelled · 1", " ø stale-job"}
 	for i, prefix := range want {
 		if !strings.HasPrefix(rows[6+i], prefix) {
 			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
@@ -387,7 +387,7 @@ func TestJobBell(t *testing.T) {
 	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
 	m.SetSnapshot(s)
 	rows := m.View(90, 16)
-	if !strings.HasPrefix(rows[9], "›● e2e-metal-ipi "+bellIcon+" ") || !strings.Contains(rows[9], "running 23m") {
+	if !strings.HasPrefix(rows[9], "›* e2e-metal-ipi "+bellIcon+" ") || !strings.Contains(rows[9], "running 23m") {
 		t.Errorf("watched job row = %q", rows[9])
 	}
 	if strings.Contains(rows[7], bellIcon) {
@@ -431,7 +431,7 @@ func TestTitleBar(t *testing.T) {
 	s.PolledAt = now.Add(-42 * time.Second)
 	m.SetSnapshot(s)
 	got := m.View(100, 16)[0]
-	for _, want := range []string{" GHWATCH  GitHub PR watcher · 3 PRs ×1 ●1 M1 · " + bellIcon + " 2", "polled 42s ago "} {
+	for _, want := range []string{" GHWATCH  GitHub PR watcher · 3 PRs ×1 *1 M1 · " + bellIcon + " 2", "polled 42s ago "} {
 		if !strings.Contains(got, want) {
 			t.Errorf("title = %q, lacks %q", got, want)
 		}

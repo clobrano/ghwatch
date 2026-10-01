@@ -142,7 +142,7 @@ func TestItemStateQueued(t *testing.T) {
 // Mono): ASCII, plus a few symbols present in all or nearly all of them.
 // The icons carry meaning, so they must not rely on font fallback.
 func TestIconsAreWidelyAvailable(t *testing.T) {
-	allowed := "●○√×–ø"
+	allowed := "√×–ø"
 	for _, s := range []State{Pending, Running, Passed, Failed, Skipped, Cancelled, Merged, Closed, Queued} {
 		for _, r := range s.Icon() {
 			if r >= 0x80 && !strings.ContainsRune(allowed, r) {

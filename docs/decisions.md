@@ -43,7 +43,7 @@ can be swapped out.
   against DejaVu Sans Mono, Noto Sans Mono, Liberation Mono, Fira Code,
   JetBrains Mono, Source Code Pro and Ubuntu Mono). They don't rely on the
   terminal borrowing glyphs from other fonts. Jobs use `×` failed, `√`
-  passed, `●` running, `○` pending, `–` skipped and `ø` cancelled. PR
+  passed, `*` running, `o` pending, `–` skipped and `ø` cancelled. PR
   states are letters: `M` merged, `Q` queued, `C` closed. The selection
   marker is `›` and stale/errors are marked `!`. Only the alert bell is a
   Nerd Font glyph; without one it shows as a box. A test in

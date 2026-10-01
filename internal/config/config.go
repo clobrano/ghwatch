@@ -66,8 +66,8 @@ func (p Paths) Ensure() error {
 	return os.Chmod(p.RuntimeDir, 0o700)
 }
 
-// DefaultStatusTemplate renders e.g. "PR ●3 √5 ×1".
-const DefaultStatusTemplate = `PR {{if .Running}}●{{.Running}} {{end}}{{if .Passed}}√{{.Passed}} {{end}}{{if .Queued}}Q{{.Queued}} {{end}}{{if .Failed}}×{{.Failed}} {{end}}{{if .Stale}}!{{end}}`
+// DefaultStatusTemplate renders e.g. "PR *3 √5 ×1".
+const DefaultStatusTemplate = `PR {{if .Running}}*{{.Running}} {{end}}{{if .Passed}}√{{.Passed}} {{end}}{{if .Queued}}Q{{.Queued}} {{end}}{{if .Failed}}×{{.Failed}} {{end}}{{if .Stale}}!{{end}}`
 
 // Config is the content of config.toml.
 type Config struct {

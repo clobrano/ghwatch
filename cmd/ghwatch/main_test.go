@@ -34,7 +34,7 @@ func TestStatus(t *testing.T) {
 	if err := cmdStatus(paths, cfg, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); got != "PR ●3 √1 Q1 ×1 !\n" {
+	if got := out.String(); got != "PR *3 √1 Q1 ×1 !\n" {
 		t.Errorf("status = %q", got)
 	}
 

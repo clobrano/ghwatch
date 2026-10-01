@@ -20,10 +20,10 @@ func TestFormat(t *testing.T) {
 		urgent bool
 	}{
 		{model.Transition{Type: model.EventCheckFailed, Check: "e2e-aws", URL: "https://job"}, "× e2e-aws failed", "https://job", true},
-		{model.Transition{Type: model.EventCheckStarted, Check: "unit", URL: "https://job"}, "● unit started", "https://job", false},
+		{model.Transition{Type: model.EventCheckStarted, Check: "unit", URL: "https://job"}, "* unit started", "https://job", false},
 		{model.Transition{Type: model.EventAllPassed}, "√ all checks passed", "https://pr", false},
 		{model.Transition{Type: model.EventCheckFinished, Check: "e2e", To: model.Passed, URL: "https://job"}, "√ e2e passed", "https://job", false},
-		{model.Transition{Type: model.EventRestarted}, "○ CI restarted by a new push (a1b2c3d)", "https://pr", false},
+		{model.Transition{Type: model.EventRestarted}, "o CI restarted by a new push (a1b2c3d)", "https://pr", false},
 		{model.Transition{Type: model.EventFinished, To: model.Merged}, "M merged", "https://pr", false},
 	}
 	for _, tt := range tests {

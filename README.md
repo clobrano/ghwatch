@@ -39,7 +39,7 @@ ghwatch rm org/repo#123
 ghwatch checks org/repo#123                         # fetch and print checks now
 ghwatch                                             # open the TUI
 ghwatch -serve                                      # run the daemon in the foreground
-ghwatch status                                      # one line, e.g. "PR ●3 √5 ×1"
+ghwatch status                                      # one line, e.g. "PR *3 √5 ×1"
 ghwatch status -json                                # the full state snapshot
 ```
 
@@ -152,7 +152,7 @@ Everything lives in plain files:
 ```toml
 interval = "60s"            # poll interval (minimum 10s)
 browser = "firefox"         # default: $BROWSER, then xdg-open; "%s" is replaced by the URL
-status_template = 'PR {{if .Running}}●{{.Running}} {{end}}{{if .Passed}}√{{.Passed}} {{end}}{{if .Failed}}×{{.Failed}} {{end}}{{if .Stale}}!{{end}}'
+status_template = 'PR {{if .Running}}*{{.Running}} {{end}}{{if .Passed}}√{{.Passed}} {{end}}{{if .Failed}}×{{.Failed}} {{end}}{{if .Stale}}!{{end}}'
 
 [notify]
 backend = "desktop"         # desktop | exec | none
