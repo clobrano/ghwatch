@@ -26,6 +26,7 @@ type fakePR struct {
 	pr.Kind
 	mu    sync.Mutex
 	items map[string]model.Item
+	calls map[string]int // fetches per item
 }
 
 func (f *fakePR) set(it model.Item) {
@@ -41,6 +42,10 @@ func (f *fakePR) Fetch(_ context.Context, _ *github.Client, ids []string) ([]mod
 	defer f.mu.Unlock()
 	var out []model.Item
 	for _, id := range ids {
+		if f.calls == nil {
+			f.calls = map[string]int{}
+		}
+		f.calls[id]++
 		it, ok := f.items[id]
 		if !ok {
 			it = model.Item{ID: id, Error: "not found"}
@@ -431,5 +436,35 @@ func TestIdleExit(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.Socket()); !os.IsNotExist(err) {
 		t.Errorf("socket left behind: %v", err)
+	}
+}
+
+func TestFinishedItemRefreshedOnStart(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	os.WriteFile(paths.Watchlist(), []byte("o/r#1\n"), 0o600)
+	// Saved by an older build: merged, but without labels.
+	old := model.Item{Kind: "pr", ID: "pr:o/r#1", Repo: "o/r", Number: 1, HeadSHA: "a", Lifecycle: model.LifeMerged, State: model.Merged}
+	if err := WriteSnapshot(paths.Snapshot(), &model.Snapshot{Schema: 1, Items: []model.Item{old}, Settings: model.DefaultSettings()}); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakePR{items: map[string]model.Item{}}
+	fake.set(model.Item{ID: "pr:o/r#1", Repo: "o/r", Number: 1, HeadSHA: "a", Lifecycle: model.LifeMerged,
+		Labels: []model.Label{{Name: "lgtm", Color: "0e8a16"}}})
+	_, cancel, done := startDaemon(t, paths, fake, notify.Nop{})
+	defer func() { cancel(); <-done }()
+	c := dial(t, paths)
+	waitFor(t, c, "labels fetched", func(s *model.Snapshot) bool { return len(s.Items[0].Labels) == 1 })
+
+	// Once fetched, the finished item is left alone.
+	for i := 0; i < 2; i++ {
+		c.Do(context.Background(), ipc.Command{Op: ipc.OpPoll})
+		waitFor(t, c, "poll", func(*model.Snapshot) bool { return true })
+	}
+	fake.mu.Lock()
+	n := fake.calls["pr:o/r#1"]
+	fake.mu.Unlock()
+	if n != 1 {
+		t.Errorf("finished item fetched %d times, want 1", n)
 	}
 }

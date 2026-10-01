@@ -104,6 +104,8 @@ groups, each under a header with its count: **Failed**, then **Running**
 **Cancelled** at the bottom. Within a group, checks stay in the order they were
 first seen. When a check changes group, the selection follows it.
 
+The PR's labels show under its header as chips in their GitHub colors.
+
 A PR waiting in GitHub's merge queue shows `⧗` on its tab. Its header
 starts with the queue state, its place in line, how long it has waited
 and GitHub's estimate of the time left, e.g. `in merge queue, checks

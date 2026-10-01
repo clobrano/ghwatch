@@ -117,6 +117,8 @@ type Item struct {
 	// kept across new pushes, since re-run jobs keep their names.
 	WatchedChecks []string `json:"watched_checks,omitempty"`
 	Checks        []Check  `json:"checks"`
+	// Labels are the item's labels, in GitHub's order.
+	Labels []Label `json:"labels,omitempty"`
 	// MergeQueue is set while the item waits in a merge queue.
 	MergeQueue *MergeQueue `json:"merge_queue,omitempty"`
 	// Error is set when the last fetch of this item failed; the rest of
@@ -133,6 +135,13 @@ func (it Item) Watching(name string) bool {
 		}
 	}
 	return false
+}
+
+// Label is a label on an item.
+type Label struct {
+	Name string `json:"name"`
+	// Color is GitHub's color for the label, as six hex digits ("d73a4a").
+	Color string `json:"color,omitempty"`
 }
 
 // MergeQueue is an item's entry in a merge queue.

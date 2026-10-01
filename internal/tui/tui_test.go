@@ -538,3 +538,35 @@ func TestCopyWithoutLink(t *testing.T) {
 		t.Errorf("copied %v, footer %q", be.copied, m.View(90, 16)[15])
 	}
 }
+
+func TestLabels(t *testing.T) {
+	m, _ := newModel()
+	s := snapshot()
+	s.Items[0].Labels = []model.Label{{Name: "lgtm", Color: "0e8a16"}, {Name: "do-not-merge/hold", Color: "fbca04"}}
+	m.SetSnapshot(s)
+	rows := m.View(90, 16)
+	if rows[5] != "  lgtm   do-not-merge/hold " {
+		t.Errorf("label row = %q", rows[5])
+	}
+	if !strings.HasPrefix(rows[6], "──") || !strings.HasPrefix(rows[7], " Failed · 1") {
+		t.Errorf("rows after labels = %q, %q", rows[6], rows[7])
+	}
+	// No labels: no extra row.
+	keys(m, "2")
+	if rows := m.View(90, 16); !strings.HasPrefix(rows[5], "──") {
+		t.Errorf("row 5 without labels = %q", rows[5])
+	}
+
+	// Text is black on light colors, white on dark ones; bad colors fall back.
+	if got := labelStyle("fbca04"); got != "\x1b[48;2;251;202;4;38;2;0;0;0m" {
+		t.Errorf("yellow = %q", got)
+	}
+	if got := labelStyle("b60205"); got != "\x1b[48;2;182;2;5;38;2;255;255;255m" {
+		t.Errorf("red = %q", got)
+	}
+	for _, bad := range []string{"", "xyz", "12345", "1234567"} {
+		if got := labelStyle(bad); got != sReverse {
+			t.Errorf("labelStyle(%q) = %q", bad, got)
+		}
+	}
+}

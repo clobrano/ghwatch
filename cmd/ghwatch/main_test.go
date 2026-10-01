@@ -79,8 +79,12 @@ func TestListAndChecksOutput(t *testing.T) {
 
 	skippedStart, skippedEnd := end, end.Add(-7*time.Second)
 	it.Checks = append(it.Checks, model.Check{Name: "label", Source: "Actions", State: model.Skipped, StartedAt: &skippedStart, CompletedAt: &skippedEnd})
+	it.Labels = []model.Label{{Name: "lgtm"}, {Name: "approved"}}
 	out.Reset()
 	printChecks(&out, it, end)
+	if !strings.Contains(out.String(), "labels: lgtm, approved\n") {
+		t.Errorf("labels missing:\n%s", out.String())
+	}
 	if strings.Contains(out.String(), "-7s") {
 		t.Errorf("negative duration printed:\n%s", out.String())
 	}

@@ -308,7 +308,11 @@ func (m *Model) header(w int) []line {
 	if len(l2) > 0 {
 		l2 = append(line{{" ", ""}}, l2...)
 	}
-	return []line{l1, l2}
+	out := []line{l1, l2}
+	if len(it.Labels) > 0 {
+		out = append(out, labelLine(it.Labels))
+	}
+	return out
 }
 
 // queueSeg describes a merge queue entry, e.g. "queued for merge, 2nd in
@@ -368,6 +372,32 @@ func ordinal(n int) string {
 		}
 	}
 	return strconv.Itoa(n) + suffix
+}
+
+// labelLine shows labels as chips in their GitHub colors.
+func labelLine(labels []model.Label) line {
+	l := line{{" ", ""}}
+	for i, lb := range labels {
+		if i > 0 {
+			l = append(l, seg{" ", ""})
+		}
+		l = append(l, seg{" " + lb.Name + " ", labelStyle(lb.Color)})
+	}
+	return l
+}
+
+// labelStyle is a 24-bit background in the label's color, with black or
+// white text, whichever reads better on it.
+func labelStyle(hex string) string {
+	var r, g, b int
+	if _, err := fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b); err != nil || len(hex) != 6 {
+		return sReverse
+	}
+	fg := "38;2;255;255;255"
+	if r*299+g*587+b*114 > 150*1000 {
+		fg = "38;2;0;0;0"
+	}
+	return fmt.Sprintf("\x1b[48;2;%d;%d;%d;%sm", r, g, b, fg)
 }
 
 func short(sha string) string {

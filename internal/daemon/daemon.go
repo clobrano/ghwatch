@@ -50,6 +50,10 @@ type Daemon struct {
 	server    *ipc.Server
 	pollNow   chan struct{}
 	fetches   atomic.Int64
+	// fresh holds the items fetched successfully since the daemon
+	// started. Finished items are skipped only once fresh, so state saved
+	// by an older build (without a newer field, say) is refreshed once.
+	fresh map[string]bool
 	// lastClient is when a client was last seen connected (loop only).
 	lastClient time.Time
 }
@@ -216,8 +220,9 @@ func (d *Daemon) Poll(ctx context.Context) (*github.RateLimit, error) {
 	byKind := map[string][]string{}
 	var order []string
 	for _, it := range d.snap.Items {
-		// A finished item never changes again: stop spending API on it.
-		if it.Lifecycle.Finished() && it.HeadSHA != "" && it.Error == "" {
+		// A finished item never changes again: once fetched by this
+		// daemon, stop spending API on it.
+		if it.Lifecycle.Finished() && d.fresh[it.ID] && it.Error == "" {
 			continue
 		}
 		k := d.Kinds.Of(it.ID)
@@ -292,6 +297,10 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 		d.snap.Items[idx] = prev
 		return nil
 	}
+	if d.fresh == nil {
+		d.fresh = map[string]bool{}
+	}
+	d.fresh[cur.ID] = true
 	cur.Alerts = prev.Alerts
 	cur.WatchedChecks = prev.WatchedChecks
 	var prevp *model.Item

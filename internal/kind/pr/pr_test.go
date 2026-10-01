@@ -292,3 +292,16 @@ func TestCheckRunLinksToGitHub(t *testing.T) {
 		t.Errorf("calls = %v", calls)
 	}
 }
+
+func TestLabels(t *testing.T) {
+	if q, _ := buildQuery([]string{"pr:o/r#1"}); !strings.Contains(q, "labels(first: 20) { nodes { name color } }") {
+		t.Errorf("query does not ask for labels:\n%s", q)
+	}
+	var p prNode
+	json.Unmarshal([]byte(`{"number":1,"state":"OPEN","headRefOid":"abc",
+	  "labels":{"nodes":[{"name":"lgtm","color":"0e8a16"},{"name":"needs-rebase","color":"b60205"}]}}`), &p)
+	it := p.toItem("pr:o/r#1", "o/r")
+	if len(it.Labels) != 2 || it.Labels[0] != (model.Label{Name: "lgtm", Color: "0e8a16"}) || it.Labels[1].Name != "needs-rebase" {
+		t.Errorf("labels = %+v", it.Labels)
+	}
+}
