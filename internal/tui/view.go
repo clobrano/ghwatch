@@ -51,39 +51,41 @@ func (m *Model) View(width, height int) []string {
 }
 
 func (m *Model) lines(w, h int) []line {
-	if w < 20 || h < 8 {
+	if w < 20 || h < 10 {
 		return []line{{{"ghwatch: terminal too small", ""}}}
 	}
-	rule := line{{strings.Repeat("─", w), sDim}}
-	out := []line{m.titleBar(w), m.tabBar(w), rule}
-	out = append(out, m.header(w)...)
-	out = append(out, rule)
-	body := h - len(out) - 2
-	var b []line
 	switch m.mode {
-	case modeFind:
-		b = m.findBody(w, body)
-	case modeEvents:
-		b = m.eventsBody()
 	case modeHelp:
-		b = helpBody(w, body)
-	default:
-		b = m.checksBody(w, body)
+		return overlay(w, h, "Keybindings", m.helpContent(w, h))
+	case modeEvents:
+		return overlay(w, h, "Notifications", m.eventsContent())
 	}
-	for i := 0; i < body; i++ {
+	out := []line{m.titleBar(w), m.tabBar(w), {{strings.Repeat("─", w), sBorder}}}
+	out = append(out, m.header(w)...)
+	// The job list sits in a box: border, column header, separator, rows.
+	rows := h - len(out) - 1 - 4
+	var b []line
+	if m.mode == modeFind {
+		b = m.findBody(w-2, rows)
+	} else {
+		b = m.checksBody(w-2, rows)
+	}
+	content := []line{m.columnHeader(w - 2), {{strings.Repeat("─", w-2), sBorder}}}
+	for i := 0; i < rows; i++ {
 		if i < len(b) {
-			out = append(out, b[i])
+			content = append(content, b[i])
 		} else {
-			out = append(out, line{})
+			content = append(content, line{})
 		}
 	}
-	return append(out, rule, m.footer(w))
+	out = append(out, box(content, w, sBorder, "", false)...)
+	return append(out, m.footer(w))
 }
 
 // titleBar is the top line: the app name, how many PRs are watched and
 // in which state, how many have alerts, and when GitHub was last polled.
 func (m *Model) titleBar(w int) line {
-	left := line{{" " + appTitle, sBold + sCyan}, {"  " + appTagline, sDim}}
+	left := line{{" " + appTitle, sBold + sAccent}, {"  " + appTagline, sDim}}
 	if m.snap == nil {
 		return spread(left, line{{"waiting for the daemon… ", sDim}}, w)
 	}
@@ -92,7 +94,7 @@ func (m *Model) titleBar(w int) line {
 	if len(items) == 1 {
 		prs = "PR"
 	}
-	left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%d %s", len(items), prs), ""})
+	left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%d %s", len(items), prs), sMuted})
 	counts := map[model.State]int{}
 	alerts := 0
 	for _, it := range items {
@@ -159,14 +161,19 @@ func (m *Model) tabLabels() []line {
 		if s := slug(it); s != "" {
 			name += " " + s
 		}
-		l := line{{" ", ""}, icon(st), {" " + name, ""}}
+		l := line{{"  " + strconv.Itoa(i+1) + ":", sMuted}, icon(st), {" " + name, sMuted}}
 		if it.Alerts || len(it.WatchedChecks) > 0 {
-			l = append(l, seg{" " + bellIcon, sCyan})
+			l = append(l, seg{" " + bellIcon, sAccent})
 		}
-		l = append(l, seg{" ", ""})
+		l = append(l, seg{"  ", ""})
 		if i == m.activeIdx {
+			// Like jira-tabbed-tui: bold white on the accent.
 			for j := range l {
-				l[j].style = sReverse + sBold + l[j].style
+				l[j].style = bgAccent + sBold + sWhite
+			}
+			if !m.Color {
+				l[0].text = " [" + l[0].text[2:]
+				l[len(l)-1].text = "] "
 			}
 		}
 		labels[i] = l
@@ -210,13 +217,12 @@ func (m *Model) tabBar(w int) line {
 	if len(labels) == 0 {
 		return line{{" no watched items", sDim}}
 	}
-	sep := seg{"│", sDim}
 	width := func(from, to int) int { // cells for labels[from..to]
 		n := 0
 		for i := from; i <= to; i++ {
-			n += labels[i].width() + 1
+			n += labels[i].width()
 		}
-		return n - 1
+		return n
 	}
 	start := 0
 	for start < m.activeIdx && width(start, m.activeIdx)+2 > w {
@@ -230,9 +236,6 @@ func (m *Model) tabBar(w int) line {
 	}
 	for i := start; i < len(labels); i++ {
 		lw := labels[i].width()
-		if i > start {
-			lw++
-		}
 		reserve := 0
 		if i < len(labels)-1 {
 			reserve = 1
@@ -240,9 +243,6 @@ func (m *Model) tabBar(w int) line {
 		if used+lw+reserve > w && i > start {
 			out = append(out, seg{"›", sDim})
 			break
-		}
-		if i > start {
-			out = append(out, sep)
 		}
 		out = append(out, labels[i]...)
 		used += lw
@@ -255,11 +255,10 @@ func (m *Model) header(w int) []line {
 	if it == nil {
 		return []line{{{" Nothing watched yet", sBold}}, {{" press a to add a PR, or run: ghwatch add <PR URL>", sDim}}}
 	}
-	l1 := spread(
-		line{{" " + ref(*it), sBold}, {"  " + it.Title, ""}},
-		line{{"@" + it.Author + " ", sDim}}, w)
+	title := line{{" " + ref(*it), sBold + sAccent}, {"  " + it.Title, sBold + sWhite}}
+	l1 := spread(title, line{{"@" + it.Author + " ", sSecondary}}, w)
 	if it.Author == "" {
-		l1 = line{{" " + ref(*it), sBold}, {"  " + it.Title, ""}}
+		l1 = title
 	}
 	dot := seg{" · ", sDim}
 	var l2 line
@@ -278,12 +277,12 @@ func (m *Model) header(w int) []line {
 		if q := it.MergeQueue; q != nil {
 			add(m.queueSeg(q))
 		}
-		add(seg{"head " + short(it.HeadSHA), ""})
+		add(seg{"head " + short(it.HeadSHA), sMuted})
 		if !it.PushedAt.IsZero() {
-			add(seg{"pushed " + human(m.now().Sub(it.PushedAt)) + " ago", ""})
+			add(seg{"pushed " + human(m.now().Sub(it.PushedAt)) + " ago", sMuted})
 		}
 		done, failed := model.Progress(it.Checks)
-		add(seg{fmt.Sprintf("%d/%d done", done, len(it.Checks)), ""})
+		add(seg{fmt.Sprintf("%d/%d done", done, len(it.Checks)), sMuted})
 		if failed > 0 {
 			add(seg{fmt.Sprintf("%d failing", failed), sRed})
 		}
@@ -293,14 +292,14 @@ func (m *Model) header(w int) []line {
 
 	}
 	if it.Alerts {
-		add(seg{"alerts on", sCyan})
+		add(seg{"alerts on", sAccent})
 	}
 	if n := len(it.WatchedChecks); n > 0 {
 		jobs := "jobs"
 		if n == 1 {
 			jobs = "job"
 		}
-		add(seg{fmt.Sprintf("%s %d %s", bellIcon, n, jobs), sCyan})
+		add(seg{fmt.Sprintf("%s %d %s", bellIcon, n, jobs), sAccent})
 	}
 	if it.Error != "" {
 		add(seg{"! " + it.Error, sRed})
@@ -504,17 +503,39 @@ func (m *Model) checksBody(w, rows int) []line {
 	return out
 }
 
-// checkRow renders one row of the check list, w cells wide.
-func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, anyRequired bool) line {
-	const timeW, srcW = 14, 8
+// Job list columns: marker, icon, name, time, source, "opt".
+const timeW, srcW = 14, 8
+
+// nameWidth is the width of the name column in a w-wide list.
+func nameWidth(w int, anyRequired bool) int {
 	optW := 0
 	if anyRequired {
 		optW = 4
 	}
-	nameW := max(w-3-1-timeW-2-srcW-optW, 8)
-	marker, nameStyle := seg{" ", ""}, ""
+	return max(w-3-1-timeW-2-srcW-optW, 8)
+}
+
+// columnHeader is the job list's header row, like jira-tabbed-tui's.
+func (m *Model) columnHeader(w int) line {
+	anyRequired := false
+	if it := m.current(); it != nil {
+		for _, c := range it.Checks {
+			anyRequired = anyRequired || c.Required
+		}
+	}
+	return line{{"   " + padRight("Check", nameWidth(w, anyRequired)) + " " + padLeft("Time", timeW) + "  " + padRight("Source", srcW), sBold + sText}}
+}
+
+// checkRow renders one row of the check list, w cells wide. The selected
+// row is a full-width bar, or carries a › marker without colors.
+func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, anyRequired bool) line {
+	nameW := nameWidth(w, anyRequired)
+	marker, nameStyle := seg{" ", ""}, sText
 	if selected {
-		marker, nameStyle = seg{"›", sCyan + sBold}, sBold
+		marker, nameStyle = seg{" ", ""}, sBold+sWhite
+		if !m.Color {
+			marker = seg{"›", ""}
+		}
 	}
 	// The name cell ends with a bell when the job has its own alerts.
 	name := line{{" " + padRight(c.Name, nameW), nameStyle}}
@@ -528,9 +549,12 @@ func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, an
 	}
 	l := append(line{marker, icon(c.State)}, name...)
 	l = append(l, seg{" " + padLeft(when, timeW), whenStyle},
-		seg{"  " + padRight(c.Source, srcW), sDim})
+		seg{"  " + padRight(c.Source, srcW), sSecondary})
 	if anyRequired && !c.Required && c.State != model.Queued {
 		l = append(l, seg{" opt", sDim})
+	}
+	if selected && m.Color {
+		return withStyle(fill(l, w, ""), bgSelect+sBold)
 	}
 	return l
 }
@@ -559,73 +583,164 @@ func (m *Model) findBody(w, rows int) []line {
 	return out
 }
 
-func (m *Model) eventsBody() []line {
-	out := []line{{{" Notify on these events, for items with alerts on (n):", sBold}},
-		{{" (a job with its own bell (b) notifies on every change of its state)", sDim}}, {}}
+// overlay draws a panel centered on an empty screen, like
+// jira-tabbed-tui's keybindings panel: an accent border, a dark background
+// and a title chip.
+func overlay(w, h int, title string, content []line) []line {
+	body := []line{{{" " + title + " ", bgAccent + sBold + sWhite}}, {}}
+	body = append(body, content...)
+	inner := 0
+	for _, l := range body {
+		inner = max(inner, l.width())
+	}
+	bw := min(inner+6, w)
+	var padded []line
+	padded = append(padded, line{})
+	for _, l := range body {
+		padded = append(padded, append(line{{"  ", ""}}, l...))
+	}
+	padded = append(padded, line{})
+	for i := range padded {
+		padded[i] = withStyle(fill(padded[i], bw-2, ""), bgOverlay)
+	}
+	panel := box(padded, bw, sAccent, "", rounded())
+	if len(panel) > h {
+		panel = append(panel[:h-1], panel[len(panel)-1])
+	}
+	top, left := (h-len(panel))/2, (w-bw)/2
+	out := make([]line, top, h)
+	for _, l := range panel {
+		out = append(out, append(line{{strings.Repeat(" ", left), ""}}, l...))
+	}
+	return out
+}
+
+// eventsContent is the notification settings panel.
+func (m *Model) eventsContent() []line {
 	var st model.Settings
 	if m.snap != nil {
 		st = m.snap.Settings
 	}
-	box := func(on bool) string {
+	check := func(on bool) string {
 		if on {
 			return "[x] "
 		}
 		return "[ ] "
 	}
+	const rowW = 54
 	row := func(i int, text string) line {
 		if i == m.evSel {
-			return line{{" › ", sCyan + sBold}, {text, sBold}}
+			l := line{{"› ", sAccent + sBold}, {text, sBold + sWhite}}
+			if m.Color {
+				return withStyle(fill(l, rowW, ""), bgSoft)
+			}
+			return l
 		}
-		return line{{"   ", ""}, {text, ""}}
+		return line{{"  ", ""}, {text, sText}}
+	}
+	out := []line{
+		{{"Notify on these events, for PRs with alerts on (n).", sMuted}},
+		{{"A job with its own bell (b) notifies on every change.", sMuted}},
+		{},
 	}
 	for i, e := range model.EventTypes {
-		out = append(out, row(i, box(st.Events[e])+e.Label()))
+		out = append(out, row(i, check(st.Events[e])+e.Label()))
 	}
-	out = append(out, line{}, row(len(model.EventTypes), box(st.Mute)+"global mute (keeps per-item settings)"))
-	return append(out, line{}, line{{" j/k move · space toggle · esc close", sDim}})
+	out = append(out, line{}, row(len(model.EventTypes), check(st.Mute)+"global mute (keeps per-PR settings)"))
+	return append(out, line{}, line{{"j/k move · space toggle · esc close", sDim}})
 }
 
-var helpRows = [][2]string{
-	{"h / l, gT / gt", "previous / next tab"},
-	{"1 – 9", "jump to tab N"},
-	{"/", "find a job in this tab (ignores case)"},
-	{"j / k, gg / G", "move between checks"},
-	{"enter", "open the selected check's job page"},
-	{"o", "open the PR page"},
-	{"y / Y", "copy the PR's / the selected job's URL"},
-	{"n", "toggle notifications for this item"},
-	{"b", "toggle notifications for the selected job"},
-	{"N", "notification settings: event types, global mute"},
-	{"a", "add a PR"},
-	{"d", "unwatch this PR (in every client)"},
-	{"r", "ask the daemon to poll now"},
-	{"R", "re-run failed CI (/retest, Actions re-run)"},
-	{"?", "this help"},
-	{"q", "quit this TUI (the daemon keeps running)"},
+// helpSections groups the keys like jira-tabbed-tui's help panel.
+var helpSections = []struct {
+	title string
+	keys  [][2]string
+}{
+	{"Navigation", [][2]string{
+		{"h / l, gT / gt", "previous / next tab"},
+		{"1 – 9", "jump to tab N"},
+		{"j / k, gg / G", "move between jobs"},
+		{"/", "find a job by name"},
+	}},
+	{"Links", [][2]string{
+		{"enter", "open the job page"},
+		{"o", "open the PR page"},
+		{"y / Y", "copy PR / job URL"},
+	}},
+	{"Notifications", [][2]string{
+		{"n", "alerts for this PR"},
+		{"b", "alerts for this job"},
+		{"N", "alert settings, mute"},
+	}},
+	{"Pull requests", [][2]string{
+		{"a", "add a PR"},
+		{"d", "unwatch this PR"},
+		{"r", "poll now"},
+		{"R", "re-run failed CI"},
+	}},
+	{"Other", [][2]string{
+		{"? / esc", "close this panel"},
+		{"q", "quit this TUI"},
+	}},
 }
 
-// helpBody lists the keys, in as many columns (of at least 50 cells) as
-// the width allows when they do not fit the height.
-func helpBody(w, rows int) []line {
-	cols := 1
-	if avail := rows - 1; avail < len(helpRows) {
-		cols = max(min(w/50, (len(helpRows)+avail-1)/max(avail, 1)), 1)
-	}
-	per := (len(helpRows) + cols - 1) / cols
-	colW := w / cols
-	out := []line{{{" Keys · any key closes", sBold}}}
-	for r := 0; r < per; r++ {
-		var l line
-		for c := 0; c < cols; c++ {
-			i := c*per + r
-			if i >= len(helpRows) {
-				break
-			}
-			l = append(l, seg{"  " + padRight(helpRows[i][0], 16), sCyan}, seg{padRight(helpRows[i][1], colW-18), ""})
+// helpContent lays the help sections out in as few columns as fit the
+// screen height.
+func (m *Model) helpContent(w, h int) []line {
+	const keyW, gap = 16, 3
+	section := func(i int, descW int) []line {
+		sec := helpSections[i]
+		out := []line{{{sec.title, sBold + sMuted}}}
+		for _, k := range sec.keys {
+			out = append(out, line{{padRight(k[0], keyW), sBold + sAccent}, {truncate(k[1], descW), sText}})
 		}
-		out = append(out, l)
+		return out
 	}
-	return out
+	avail := h - 8 // borders, padding, title chip and its blank line
+	for cols := 1; ; cols++ {
+		descW := min(48, max((w-5-gap*(cols-1))/cols-keyW, 12))
+		// Fill columns in order, starting a new one when the next section
+		// would make the current one taller than an even share.
+		var columns [][]line
+		var cur []line
+		total := 0
+		for i := range helpSections {
+			total += len(helpSections[i].keys) + 2
+		}
+		target := (total + cols - 1) / cols
+		for i := range helpSections {
+			s := section(i, descW)
+			if len(cur) > 0 && len(cur)+1+len(s) > target && len(columns) < cols-1 {
+				columns = append(columns, cur)
+				cur = nil
+			}
+			if len(cur) > 0 {
+				cur = append(cur, line{})
+			}
+			cur = append(cur, s...)
+		}
+		columns = append(columns, cur)
+		height := 0
+		for _, c := range columns {
+			height = max(height, len(c))
+		}
+		if height <= avail || cols == 3 {
+			colW := keyW + descW + gap
+			out := make([]line, height)
+			for r := 0; r < height; r++ {
+				for c, col := range columns {
+					var l line
+					if r < len(col) {
+						l = col[r]
+					}
+					if c < len(columns)-1 {
+						l = fill(l, colW, "")
+					}
+					out[r] = append(out[r], l...)
+				}
+			}
+			return out
+		}
+	}
 }
 
 func (m *Model) footer(w int) line {
@@ -649,21 +764,22 @@ func (m *Model) footer(w int) line {
 	var left line
 	switch {
 	case m.mode == modeAdd:
-		left = line{{" Add PR (URL or owner/repo#N): ", sBold}, {string(m.input) + "_", ""}}
+		left = line{{"  Add PR (URL or owner/repo#N): ", sBold + sAccent}, {string(m.input) + "_", sWhite}}
 	case m.mode == modeFind:
-		left = line{{" /", sBold}, {string(m.input) + "_", ""}, {"   ↑/↓ choose · enter select · esc cancel", sDim}}
+		left = line{{"  /", sBold + sAccent}, {string(m.input) + "_", sWhite}, {"   ↑/↓ choose · enter select · esc cancel", sDim}}
 	case m.mode == modeConfirm:
-		left = line{{" " + m.confirmMsg + " ", sBold}, {"[y/N]", sYellow}}
+		left = line{{"  " + m.confirmMsg + " ", sBold + sWhite}, {"[y/N]", sYellow}}
 	case m.flash != "" && m.now().Before(m.flashUntil):
-		style := sYellow
+		// Like jira-tabbed-tui: bold green or red, with a mark.
 		if m.flashErr {
-			style = sRed
+			left = line{{"  " + model.Failed.Icon() + " " + m.flash, sBold + sRed}}
+		} else {
+			left = line{{"  " + model.Passed.Icon() + " " + m.flash, sBold + sGreen}}
 		}
-		left = line{{" " + m.flash, style}}
 	case m.snap != nil && m.snap.Stale && m.snap.Error != "":
-		left = line{{" ! " + m.snap.Error, sYellow}}
+		left = line{{"  ! " + m.snap.Error, sYellow}}
 	default:
-		left = line{{" h/l tab · j/k check · enter job · o PR · n/b alerts · N events · ?", sDim}}
+		left = line{{"  h/l tab · j/k check · enter job · o PR · n/b alerts · N events · ? help", sDim}}
 	}
 	return spread(left, right, w)
 }

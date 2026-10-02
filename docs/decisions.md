@@ -38,6 +38,15 @@ can be swapped out.
 
 ## Other choices
 
+- **Look**: the TUI follows jira-tabbed-tui's style, so the two tools
+  look alike side by side. Both use a `#5555ff` accent and `N:name` tabs,
+  with the active tab bold white on the accent. Lists sit in a bordered
+  box with a column header, and the selected row is a full-width `#3333aa`
+  bar. Hints are dim grey, and messages bold green or red. Help and
+  settings open as centred panels with an accent border and a `#111111`
+  background. Colors are 24-bit; without colors (`NO_COLOR`) the active
+  tab is bracketed and the selected row keeps a `›` marker.
+
 - **Icon sets**: a terminal program can't ask whether a glyph will be drawn
   (a missing glyph still takes one cell), so the icons are a setting.
   `fancy` (default) uses Unicode symbols (`✗` `✓` `●` `◌` `–` `⊘`) that rely

@@ -81,20 +81,24 @@ func TestView(t *testing.T) {
 			t.Errorf("screen lacks %q:\n%s", want, screen)
 		}
 	}
-	rows := m.View(90, 16)
-	if len(rows) != 16 {
+	rows := m.View(90, 18)
+	if len(rows) != 18 {
 		t.Errorf("View returned %d rows", len(rows))
 	}
 	// Failed first, then running (and pending), then passed, each under a
 	// header; the first failure is selected.
 	want := []string{" Failed · 1", "›× e2e-aws-ovn", " Running · 2", " * e2e-metal-ipi", " o tide", " Passed · 1", " √ lint"}
+	body := listRows(rows)
 	for i, prefix := range want {
-		if !strings.HasPrefix(rows[6+i], prefix) {
-			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
+		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
+			t.Errorf("list row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
 		}
 	}
-	if !strings.Contains(rows[12], "2m") {
-		t.Errorf("lint row lacks its duration: %q", rows[12])
+	if !strings.HasPrefix(rows[5], "┌") || !strings.Contains(rows[6], "Check") || !strings.Contains(rows[6], "Time") || !strings.Contains(rows[6], "Source") {
+		t.Errorf("box top %q, column header %q", rows[5], rows[6])
+	}
+	if len(body) > 6 && !strings.Contains(body[6], "2m") {
+		t.Errorf("lint row lacks its duration: %q", body[6])
 	}
 }
 
@@ -198,8 +202,8 @@ func TestFind(t *testing.T) {
 	// Searches the jobs of the current tab, ignoring case; tabs stay put.
 	keys(m, "/", "M", "E", "T", "A", "L")
 	rows := m.View(90, 16)
-	if !strings.Contains(rows[6], "1 of 4 jobs match") || !strings.HasPrefix(rows[7], "›* e2e-metal-ipi") {
-		t.Errorf("find list =\n%s", strings.Join(rows[6:9], "\n"))
+	if body := listRows(rows); !strings.Contains(body[0], "1 of 4 jobs match") || !strings.HasPrefix(body[1], "›* e2e-metal-ipi") {
+		t.Errorf("find list =\n%s", strings.Join(body, "\n"))
 	}
 	if !strings.Contains(rows[15], "/METAL") {
 		t.Errorf("footer = %q", rows[15])
@@ -301,12 +305,28 @@ func TestTextHelpers(t *testing.T) {
 }
 
 func TestHelpFitsInColumns(t *testing.T) {
+	// Tall enough: one column, every key and description.
 	m, _ := newModel()
 	keys(m, "?")
-	screen := strings.Join(m.View(150, 17), "\n")
-	for _, r := range helpRows {
-		if !strings.Contains(screen, r[1]) {
-			t.Errorf("help lacks %q:\n%s", r[1], screen)
+	screen := strings.Join(m.View(120, 40), "\n")
+	if !strings.Contains(screen, " Keybindings ") {
+		t.Errorf("no title chip:\n%s", screen)
+	}
+	for _, sec := range helpSections {
+		if !strings.Contains(screen, sec.title) {
+			t.Errorf("help lacks section %q", sec.title)
+		}
+		for _, r := range sec.keys {
+			if !strings.Contains(screen, r[1]) {
+				t.Errorf("help lacks %q:\n%s", r[1], screen)
+			}
+		}
+	}
+	// Short screen: the sections flow into columns and still all show.
+	screen = strings.Join(m.View(200, 20), "\n")
+	for _, sec := range helpSections {
+		if !strings.Contains(screen, sec.title) {
+			t.Errorf("short screen lacks section %q:\n%s", sec.title, screen)
 		}
 	}
 	keys(m, "x")
@@ -325,8 +345,8 @@ func TestSelectionFollowsCheckAcrossGroups(t *testing.T) {
 		t.Fatalf("selection moved to %s", c.Name)
 	}
 	rows := m.View(90, 16)
-	if !strings.HasPrefix(rows[6], " Failed · 2") || !strings.HasPrefix(rows[8], "›× e2e-metal-ipi") {
-		t.Errorf("rows =\n%s", strings.Join(rows[6:10], "\n"))
+	if body := listRows(rows); !strings.HasPrefix(body[0], " Failed · 2") || !strings.HasPrefix(body[2], "›× e2e-metal-ipi") {
+		t.Errorf("rows =\n%s", strings.Join(body, "\n"))
 	}
 
 	// On a new head the check is gone: the selection keeps its position.
@@ -341,21 +361,19 @@ func TestSelectionFollowsCheckAcrossGroups(t *testing.T) {
 
 func TestGroupScrollShowsHeader(t *testing.T) {
 	m, _ := newModel()
-	// 5 body rows for 7 list rows: the passed group starts below the fold.
-	rows := m.View(90, 12)
-	if strings.Contains(strings.Join(rows, "\n"), "lint") {
-		t.Fatal("screen is tall enough to show every check")
+	// 5 list rows for 7 entries: the passed group starts below the fold.
+	rows := m.View(90, 15)
+	if body := listRows(rows); len(body) != 5 || strings.Contains(strings.Join(body, "\n"), "lint") {
+		t.Fatalf("want 5 rows without lint:\n%s", strings.Join(body, "\n"))
 	}
 	keys(m, "G")
-	rows = m.View(90, 12)
-	body := strings.Join(rows[6:11], "\n")
+	body := strings.Join(listRows(m.View(90, 15)), "\n")
 	if !strings.Contains(body, "Passed · 1") || !strings.Contains(body, "›√ lint") {
 		t.Errorf("body =\n%s", body)
 	}
 	keys(m, "g", "g")
-	rows = m.View(90, 12)
-	if !strings.HasPrefix(rows[6], " Failed · 1") {
-		t.Errorf("scrolled back, first body row = %q", rows[6])
+	if first := listRows(m.View(90, 15))[0]; !strings.HasPrefix(first, " Failed · 1") {
+		t.Errorf("scrolled back, first body row = %q", first)
 	}
 }
 
@@ -366,9 +384,10 @@ func TestCancelledGroupAtBottom(t *testing.T) {
 	m.SetSnapshot(s)
 	rows := m.View(90, 20)
 	want := []string{" Failed · 1", "›× e2e-aws-ovn", " Running · 2", " * e2e-metal-ipi", " o tide", " Passed · 1", " √ lint", " Cancelled · 1", " ø stale-job"}
+	body := listRows(rows)
 	for i, prefix := range want {
-		if !strings.HasPrefix(rows[6+i], prefix) {
-			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
+		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
+			t.Errorf("list row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
 		}
 	}
 }
@@ -387,11 +406,12 @@ func TestJobBell(t *testing.T) {
 	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
 	m.SetSnapshot(s)
 	rows := m.View(90, 16)
-	if !strings.HasPrefix(rows[9], "›* e2e-metal-ipi "+bellIcon+" ") || !strings.Contains(rows[9], "running 23m") {
-		t.Errorf("watched job row = %q", rows[9])
+	body := listRows(rows)
+	if !strings.HasPrefix(body[3], "›* e2e-metal-ipi "+bellIcon+" ") || !strings.Contains(body[3], "running 23m") {
+		t.Errorf("watched job row = %q", body[3])
 	}
-	if strings.Contains(rows[7], bellIcon) {
-		t.Errorf("unwatched job has a bell: %q", rows[7])
+	if strings.Contains(body[1], bellIcon) {
+		t.Errorf("unwatched job has a bell: %q", body[1])
 	}
 	if !strings.Contains(rows[1], "#123 lease-race "+bellIcon) || !strings.Contains(rows[4], bellIcon+" 1 job") || strings.Contains(rows[4], "alerts on") {
 		t.Errorf("tab = %q, header = %q", rows[1], rows[4])
@@ -498,13 +518,14 @@ func TestMergeQueueRow(t *testing.T) {
 	keys(m, "2")
 	rows := m.View(100, 16)
 	want := []string{" Merge queue · 1", "›Q merge queue", " Passed · 1", " √ unit"}
+	body := listRows(rows)
 	for i, prefix := range want {
-		if !strings.HasPrefix(rows[6+i], prefix) {
-			t.Errorf("row %d = %q, want prefix %q", 6+i, rows[6+i], prefix)
+		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
+			t.Errorf("list row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
 		}
 	}
-	if !strings.Contains(rows[7], "checks running  GitHub") {
-		t.Errorf("queue row = %q", rows[7])
+	if !strings.Contains(body[1], "checks running  GitHub") {
+		t.Errorf("queue row = %q", body[1])
 	}
 	if !strings.Contains(rows[4], "1/1 done") {
 		t.Errorf("the queue row counts as a check: %q", rows[4])
@@ -548,12 +569,12 @@ func TestLabels(t *testing.T) {
 	if rows[5] != "  lgtm   do-not-merge/hold " {
 		t.Errorf("label row = %q", rows[5])
 	}
-	if !strings.HasPrefix(rows[6], "──") || !strings.HasPrefix(rows[7], " Failed · 1") {
-		t.Errorf("rows after labels = %q, %q", rows[6], rows[7])
+	if !strings.HasPrefix(rows[6], "┌") || !strings.HasPrefix(listRows(rows)[0], " Failed · 1") {
+		t.Errorf("rows after labels = %q, %q", rows[6], listRows(rows)[0])
 	}
 	// No labels: no extra row.
 	keys(m, "2")
-	if rows := m.View(90, 16); !strings.HasPrefix(rows[5], "──") {
+	if rows := m.View(90, 16); !strings.HasPrefix(rows[5], "┌") {
 		t.Errorf("row 5 without labels = %q", rows[5])
 	}
 
@@ -567,6 +588,72 @@ func TestLabels(t *testing.T) {
 	for _, bad := range []string{"", "xyz", "12345", "1234567"} {
 		if got := labelStyle(bad); got != sReverse {
 			t.Errorf("labelStyle(%q) = %q", bad, got)
+		}
+	}
+}
+
+// listRows returns the job list rows: what lies between the column
+// header's separator and the box's bottom border, without the side borders.
+func listRows(rows []string) []string {
+	var out []string
+	in := false
+	for _, r := range rows {
+		switch {
+		case strings.HasPrefix(r, "│───"):
+			in = true
+		case strings.HasPrefix(r, "└"):
+			return out
+		case in:
+			out = append(out, strings.TrimSuffix(strings.TrimPrefix(r, "│"), "│"))
+		}
+	}
+	return out
+}
+
+func TestJiraStyle(t *testing.T) {
+	m, _ := newModel()
+	m.Color = true
+	rows := m.View(90, 16)
+	// The active tab is bold white on the accent, like jira-tabbed-tui.
+	if !strings.Contains(rows[1], bgAccent+sBold+sWhite+"  1:") {
+		t.Errorf("active tab not on the accent: %q", rows[1])
+	}
+	// The selected row is a bar across the whole list.
+	sel := ""
+	for _, r := range rows {
+		if strings.Contains(r, "e2e-aws-ovn") {
+			sel = r
+		}
+	}
+	if !strings.Contains(sel, bgSelect) || strings.Contains(sel, "›") {
+		t.Errorf("selected row = %q", sel)
+	}
+	// Panels: rounded corners with the fancy icons, square with safe ones.
+	keys(m, "?")
+	model.UseIcons("fancy")
+	fancy := strings.Join(m.View(120, 40), "\n")
+	model.UseIcons("safe")
+	safe := strings.Join(m.View(120, 40), "\n")
+	if !strings.Contains(fancy, "╭") || !strings.Contains(safe, "┌") || strings.Contains(safe, "╭") {
+		t.Error("panel corners do not follow the icon set")
+	}
+	if !strings.Contains(fancy, bgOverlay) || !strings.Contains(fancy, bgAccent+sBold+sWhite+" Keybindings ") {
+		t.Error("panel lacks its background or title chip")
+	}
+}
+
+func TestNoColorMarkers(t *testing.T) {
+	m, _ := newModel() // colors off
+	rows := m.View(90, 16)
+	if !strings.Contains(rows[1], " [1:") {
+		t.Errorf("active tab not marked without colors: %q", rows[1])
+	}
+	if !strings.HasPrefix(listRows(rows)[1], "›") {
+		t.Errorf("selected row not marked without colors: %q", listRows(rows)[1])
+	}
+	for _, r := range rows {
+		if strings.Contains(r, "\x1b[") {
+			t.Fatalf("escape sequence without colors: %q", r)
 		}
 	}
 }
