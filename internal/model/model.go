@@ -60,8 +60,15 @@ var (
 // IconSets maps the names accepted by UseIcons to their sets.
 var IconSets = map[string]map[State]string{"fancy": FancyIcons, "safe": SafeIcons, "ascii": ASCIIIcons}
 
-// icons is the set in use. It is chosen once, at startup.
-var icons = FancyIcons
+// icons is the set in use, and iconSet its name. They are chosen once,
+// at startup.
+var (
+	icons   = FancyIcons
+	iconSet = "fancy"
+)
+
+// IconSet returns the name of the icon set in use.
+func IconSet() string { return iconSet }
 
 // UseIcons selects the icon set by name: fancy, safe or ascii.
 func UseIcons(name string) error {
@@ -69,7 +76,7 @@ func UseIcons(name string) error {
 	if !ok {
 		return fmt.Errorf("unknown icon set %q (want fancy or safe)", name)
 	}
-	icons = set
+	icons, iconSet = set, name
 	return nil
 }
 

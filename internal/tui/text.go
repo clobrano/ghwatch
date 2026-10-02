@@ -5,21 +5,49 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/clobrano/ghwatch/internal/model"
 )
 
-// ANSI styles.
+// Styles. The palette follows jira-tabbed-tui: a #5555ff accent, light
+// grey text, darker greys for secondary text, hints and borders, and a
+// #3333aa bar for the selected row. Colors are 24-bit.
 const (
 	sReset   = "\x1b[0m"
 	sBold    = "\x1b[1m"
-	sDim     = "\x1b[2m"
 	sReverse = "\x1b[7m"
-	sRed     = "\x1b[31m"
-	sGreen   = "\x1b[32m"
-	sYellow  = "\x1b[33m"
-	sBlue    = "\x1b[34m"
-	sMagenta = "\x1b[35m"
-	sCyan    = "\x1b[36m"
 )
+
+var (
+	sText      = fg("dddddd") // normal text
+	sWhite     = fg("ffffff") // emphasis: titles, selected rows
+	sMuted     = fg("aaaaaa") // inactive tabs, details
+	sSecondary = fg("888888") // secondary columns
+	sDim       = fg("555555") // hints, separators
+	sBorder    = fg("444444") // box and rule lines
+	sAccent    = fg("5555ff") // keys, PR reference, alerts
+	sRed       = fg("ff4444")
+	sGreen     = fg("00cc44")
+	sYellow    = fg("ffaa00") // running, stale
+	sBlue      = fg("5588ff") // merge queue
+	sMagenta   = fg("aa66ff") // merged
+	sCyan      = sAccent
+
+	bgAccent  = bg("5555ff") // active tab, title chips
+	bgSelect  = bg("3333aa") // selected row
+	bgSoft    = bg("222255") // selected row in panels
+	bgOverlay = bg("111111") // help and settings panels
+)
+
+// fg and bg return 24-bit color escapes for a hex color.
+func fg(hex string) string { return rgb(38, hex) }
+func bg(hex string) string { return rgb(48, hex) }
+
+func rgb(layer int, hex string) string {
+	var r, g, b int
+	fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b)
+	return fmt.Sprintf("\x1b[%d;2;%d;%d;%dm", layer, r, g, b)
+}
 
 // seg is a run of text in one style.
 type seg struct {
@@ -162,3 +190,57 @@ func human(d time.Duration) string {
 	}
 	return fmt.Sprintf("%dd%dh", int(d.Hours())/24, int(d.Hours())%24)
 }
+
+// withStyle returns l with style added before each segment's own style,
+// e.g. a background for a highlighted row.
+func withStyle(l line, style string) line {
+	out := make(line, len(l))
+	for i, s := range l {
+		out[i] = seg{s.text, style + s.style}
+	}
+	return out
+}
+
+// fill pads l with spaces in style to exactly w cells.
+func fill(l line, w int, style string) line {
+	if n := w - l.width(); n > 0 {
+		return append(append(line{}, l...), seg{strings.Repeat(" ", n), style})
+	}
+	return cut(l, w)
+}
+
+// cut keeps the first w cells of l.
+func cut(l line, w int) line {
+	var out line
+	left := w
+	for _, s := range l {
+		if left <= 0 {
+			break
+		}
+		t := truncate(s.text, left)
+		left -= strWidth(t)
+		out = append(out, seg{t, s.style})
+	}
+	return out
+}
+
+// box draws content inside a border of the given style, w cells wide.
+// Content lines are padded with spaces in fillStyle.
+func box(content []line, w int, borderStyle, fillStyle string, rounded bool) []line {
+	tl, tr, bl, br := "┌", "┐", "└", "┘"
+	if rounded {
+		tl, tr, bl, br = "╭", "╮", "╰", "╯"
+	}
+	inner := w - 2
+	out := []line{{{tl + strings.Repeat("─", inner) + tr, borderStyle}}}
+	for _, c := range content {
+		l := line{{"│", borderStyle}}
+		l = append(l, fill(c, inner, fillStyle)...)
+		out = append(out, append(l, seg{"│", borderStyle}))
+	}
+	return append(out, line{{bl + strings.Repeat("─", inner) + br, borderStyle}})
+}
+
+// rounded reports whether boxes may use rounded corners: only with the
+// fancy icon set, since several fonts lack them.
+func rounded() bool { return model.IconSet() == "fancy" }

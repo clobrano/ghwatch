@@ -113,8 +113,8 @@ and GitHub's estimate of the time left, e.g. `in merge queue, checks
 running, 2nd in line, 12m ago, ~8m left`. The queue is also the first row of
 the list, under a "Merge queue" header: select it and press `enter` to
 open the queue page on GitHub. That row is not a check: it does not count
-in "done", and has no bell of its own (`n` alerts cover the merge). A tab label starts with the PR's state icon, and a
-bell marks PRs with alerts on. A PR from a repository other than the most
+in "done", and has no bell of its own (`n` alerts cover the merge). A tab label is the tab's number (the `1`–`9` key) and the PR's state icon,
+and a bell marks PRs with alerts on. A PR from a repository other than the most
 common one gets a short repository prefix (`osac#58`). Checks marked `opt`
 are not required by branch protection. When a PR has required checks, a
 failing optional check does not turn the PR red.
