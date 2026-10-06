@@ -657,3 +657,30 @@ func TestNoColorMarkers(t *testing.T) {
 		}
 	}
 }
+
+func TestFooterHints(t *testing.T) {
+	m, _ := newModel()
+	// Wide: every hint, in order, saying what each key does.
+	wide := m.View(220, 16)[15]
+	want := "h/l prev/next PR · j/k next/prev job · enter open job · o open PR · y/Y copy PR/job link · n alert PR · b alert job · N alert settings · / find job · ? all keys"
+	if !strings.Contains(wide, want) {
+		t.Errorf("wide footer = %q", wide)
+	}
+	// 80 columns: the least important hints give way, the line fits beside
+	// the connection status, and "? all keys" stays.
+	narrow := m.View(80, 16)[15]
+	if !strings.Contains(narrow, "? all keys") || !strings.Contains(narrow, "enter open job") || !strings.Contains(narrow, "connected") {
+		t.Errorf("80-column footer = %q", narrow)
+	}
+	if strings.Contains(narrow, "alert settings") || strings.Contains(narrow, "…") {
+		t.Errorf("80-column footer keeps a low-priority hint or cuts one: %q", narrow)
+	}
+	// Very narrow: only "? all keys" is left.
+	if got := hintLine(14).plain(); got != "  ? all keys" {
+		t.Errorf("tiny footer = %q", got)
+	}
+	// Keys stand out in the accent.
+	if l := hintLine(200); l[1].style != sBold+sAccent || l[1].text != "h/l" {
+		t.Errorf("key style = %+v", l[1])
+	}
+}

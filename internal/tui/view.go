@@ -779,7 +779,66 @@ func (m *Model) footer(w int) line {
 	case m.snap != nil && m.snap.Stale && m.snap.Error != "":
 		left = line{{"  ! " + m.snap.Error, sYellow}}
 	default:
-		left = line{{"  h/l tab · j/k check · enter job · o PR · n/b alerts · N events · ? help", sDim}}
+		left = hintLine(w - right.width() - 1)
 	}
 	return spread(left, right, w)
+}
+
+// footerHints are the key hints of the footer, in display order. Each says
+// what the key does; drop is the order in which they give way on narrow
+// screens (higher first). "? all keys" always stays.
+var footerHints = []struct {
+	key, label string
+	drop       int
+}{
+	{"h/l", "prev/next PR", 3},
+	{"j/k", "next/prev job", 4},
+	{"enter", "open job", 1},
+	{"o", "open PR", 2},
+	{"y/Y", "copy PR/job link", 8},
+	{"n", "alert PR", 5},
+	{"b", "alert job", 6},
+	{"N", "alert settings", 9},
+	{"/", "find job", 7},
+	{"?", "all keys", 0},
+}
+
+// hintLine renders as many footer hints as fit in w cells: keys in the
+// accent, what they do in grey.
+func hintLine(w int) line {
+	keep := make([]bool, len(footerHints))
+	for i := range keep {
+		keep[i] = true
+	}
+	build := func() line {
+		l := line{{"  ", ""}}
+		first := true
+		for i, h := range footerHints {
+			if !keep[i] {
+				continue
+			}
+			if !first {
+				l = append(l, seg{" · ", sDim})
+			}
+			first = false
+			l = append(l, seg{h.key, sBold + sAccent}, seg{" " + h.label, sSecondary})
+		}
+		return l
+	}
+	for l := build(); ; l = build() {
+		if l.width() <= w {
+			return l
+		}
+		// Drop the hint that gives way first among those still shown.
+		worst := -1
+		for i, h := range footerHints {
+			if keep[i] && h.drop > 0 && (worst < 0 || h.drop > footerHints[worst].drop) {
+				worst = i
+			}
+		}
+		if worst < 0 {
+			return l
+		}
+		keep[worst] = false
+	}
 }
