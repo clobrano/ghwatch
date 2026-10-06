@@ -72,6 +72,53 @@ set -g status-interval 10
 A trailing `!` means the state is stale: the daemon is not running, or its
 last poll failed.
 
+The TUI uses 24-bit colors. Inside tmux, enable true color for your terminal,
+or tmux maps them to the nearest of 256 colors:
+
+```tmux
+set -as terminal-features ',xterm-256color:RGB'
+```
+
+### The TUI
+
+The screen follows the style of
+[jira-tabbed-tui](https://github.com/clobrano/jira-tabbed-tui), from top to
+bottom:
+
+- **Title bar:** the app name and how many PRs are watched and in which
+  state (failed, running, passed, queued, merged or closed). It also shows
+  how many PRs have alerts, whether notifications are muted, and when
+  GitHub was last polled. The poll time turns yellow ("last poll … ago")
+  while polling fails.
+- **Tabs:** one per PR, in the order they were added. A label is the
+  tab's number (its `1`–`9` key), the PR's state icon, the number and a
+  short name, and a bell when alerts are on. A PR from a repository other
+  than the most common one gets a short repository prefix (`osac#58`).
+  The active tab is highlighted.
+- **PR header:** reference, title and author, then head commit, push
+  time, progress and failures. The PR's labels show below as chips in
+  their GitHub colors.
+- **Job list:** a box with a Check / Time / Source header and the
+  selected job highlighted. Jobs are split into groups, each under a
+  header with its count: **Failed**, then **Running** (including
+  pending), then **Passed** (including skipped), then **Cancelled** at
+  the bottom. Within a group, jobs stay in the order they were first
+  seen, and when a job changes group, the selection follows it. Jobs
+  marked `opt` are not required by branch protection. When a PR has
+  required checks, a failing optional one does not turn the PR red.
+- **Footer:** what the main keys do (`h/l prev/next PR · j/k next/prev job
+  · enter open job · o open PR · …`), and the connection to the daemon.
+  On narrow terminals the less important hints give way, and
+  `? all keys` always stays. Messages replace the hints for a few
+  seconds.
+
+`?` opens the full list of keys in a panel, grouped by topic, and `N`
+opens the notification settings the same way.
+
+Links open where GitHub's PR page points: a GitHub Actions job opens its
+job page, a check from another app (such as Konflux) opens its page on
+GitHub, and a commit status (such as Prow) opens its target URL.
+
 ### TUI keys
 
 | Key | Action |
@@ -91,21 +138,8 @@ last poll failed.
 | `d` | unwatch the current PR (in every client) |
 | `r` | ask the daemon to poll now |
 | `R` | re-run failed CI: comment `/retest` for Prow, re-run failed Actions jobs |
-| `?` | help |
+| `?` | all keys (`?` or `esc` closes it) |
 | `q` | quit this TUI (the daemon keeps running) |
-
-The top line shows the app name and how many PRs are watched and in which state (failed,
-running, passed, merged or closed), how many have alerts, whether
-notifications are muted, and when GitHub was last polled. It turns yellow
-("last poll … ago") while polling fails.
-
-Tabs keep the order in which the PRs were added. Checks are split into
-groups, each under a header with its count: **Failed**, then **Running**
-(including pending), then **Passed** (including skipped), then
-**Cancelled** at the bottom. Within a group, checks stay in the order they were
-first seen. When a check changes group, the selection follows it.
-
-The PR's labels show under its header as chips in their GitHub colors.
 
 A PR waiting in GitHub's merge queue shows `Q` on its tab. Its header
 starts with the queue state, its place in line, how long it has waited
@@ -113,17 +147,13 @@ and GitHub's estimate of the time left, e.g. `in merge queue, checks
 running, 2nd in line, 12m ago, ~8m left`. The queue is also the first row of
 the list, under a "Merge queue" header: select it and press `enter` to
 open the queue page on GitHub. That row is not a check: it does not count
-in "done", and has no bell of its own (`n` alerts cover the merge). A tab label is the tab's number (the `1`–`9` key) and the PR's state icon,
-and a bell marks PRs with alerts on. A PR from a repository other than the most
-common one gets a short repository prefix (`osac#58`). Checks marked `opt`
-are not required by branch protection. When a PR has required checks, a
-failing optional check does not turn the PR red.
+in "done", and has no bell of its own (`n` alerts cover the merge).
 
 ### Notifications
 
 Notifications are off for every PR until you press `n` on its tab, or `b`
-on one of its jobs. The
-setting is shared by all clients and survives restarts. `N` chooses which
+on one of its jobs. The setting is shared by all clients and survives
+restarts. `N` chooses which
 events notify: check failed, all checks passed, check started, CI restarted
 by a new push, merged or closed. All of them are enabled at first.
 
@@ -133,10 +163,11 @@ whenever its state changes (started, failed, passed, skipped, cancelled),
 even with the PR's alerts off. The bell stays on the job across new pushes,
 since a re-run job keeps its name. When an event is wanted both for the
 PR and for the job, it still sends one notification. The global mute
-silences job bells too. Each
-event sends exactly one notification, from the daemon, however many clients
-are open. After a `/retest`, a notification is sent for each job as it
-fails.
+silences job bells too.
+
+Each event sends exactly one notification, from the daemon, however many
+clients are open. After a `/retest`, a notification is sent for each job as
+it fails.
 
 ## Configuration
 
@@ -174,8 +205,8 @@ letters in every set: `M` merged, `Q` queued, `C` closed. Run `ghwatch
 icons` to see all the sets in your terminal.
 
 The status template is a Go `text/template`. It can use `.Running`,
-`.Pending`, `.Passed`, `.Failed`, `.Merged`, `.Closed`, `.Total`, `.Stale`
-and `.Items`, and `{{icon "running"}}` (or any state) prints that state's
+`.Pending`, `.Passed`, `.Failed`, `.Queued`, `.Merged`, `.Closed`, `.Total`,
+`.Stale` and `.Items`, and `{{icon "running"}}` (or any state) prints that state's
 icon from the configured set. Pending PRs count as running in the default
 template.
 
@@ -196,8 +227,9 @@ The `exec` notifier is the plugin hook for other delivery channels. It runs
 
 - The daemon polls only the PRs on the watchlist. All of them go into one
   GraphQL request per cycle. Each request fetches the head commit's
-  check-runs and commit statuses and whether each check is required. PRs
-  that are merged or closed are no longer fetched.
+  check-runs and commit statuses, whether each check is required, the
+  PR's labels and its merge queue entry. A merged or closed PR is fetched
+  once after the daemon starts, then no more.
 - When a check is re-run, only its latest run is kept. A new push resets
   the PR to the new head's checks.
 - Polling backs off exponentially on errors (up to 15 minutes). When less
