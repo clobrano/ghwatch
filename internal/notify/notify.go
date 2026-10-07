@@ -58,9 +58,8 @@ type Desktop struct {
 	Open Opener
 	// Timeout is how long to wait for a click before giving up.
 	Timeout time.Duration
-	// Expire is how long a non-urgent notification stays on screen; 0
-	// keeps it until dismissed. Urgent ones always stay until dismissed.
-	// Some servers (GNOME Shell) ignore it for non-urgent notifications.
+	// Expire is how long a notification stays on screen; 0 keeps it until
+	// dismissed. Some servers (GNOME Shell) ignore it.
 	Expire time.Duration
 
 	once    sync.Once
@@ -86,20 +85,16 @@ func (d *Desktop) Notify(ctx context.Context, n Notification) error {
 		return d.err
 	}
 	args := []string{"--app-name=ghwatch"}
-	if n.Urgent {
-		// Critical notifications stay on screen until dismissed.
-		args = append(args, "--urgency=critical", "--expire-time=0")
-	} else {
-		args = append(args, fmt.Sprintf("--expire-time=%d", d.Expire.Milliseconds()))
-	}
+	// Urgent notifications are not sent as critical: most servers keep
+	// critical ones on screen until dismissed, ignoring Expire.
+	args = append(args, fmt.Sprintf("--expire-time=%d", d.Expire.Milliseconds()))
 	if !d.actions || n.URL == "" || d.Open == nil {
 		args = append(args, "--", n.Title, n.Body)
 		return exec.CommandContext(ctx, "notify-send", args...).Run()
 	}
 	timeout := d.Timeout
 	if timeout == 0 {
-		// Urgent notifications can sit on screen for a long while.
-		timeout = 24 * time.Hour
+		timeout = time.Hour
 	}
 	args = append(args, "--action=default=Open", "--wait", "--", n.Title, n.Body)
 	wctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -158,10 +153,8 @@ func Format(t model.Transition, it model.Item) Notification {
 		n.Title = fmt.Sprintf("%s %s started", model.Running.Icon(), t.Check)
 	case model.EventCheckFinished:
 		n.Title = fmt.Sprintf("%s %s %s", t.To.Icon(), t.Check, t.To)
-		n.Urgent = true
 	case model.EventAllPassed:
 		n.Title = fmt.Sprintf("%s all checks passed", model.Passed.Icon())
-		n.Urgent = true
 	case model.EventRestarted:
 		n.Title = fmt.Sprintf("%s CI restarted by a new push", model.Pending.Icon())
 		if len(it.HeadSHA) >= 7 {
@@ -169,7 +162,6 @@ func Format(t model.Transition, it model.Item) Notification {
 		}
 	case model.EventFinished:
 		n.Title = fmt.Sprintf("%s %s", t.To.Icon(), string(it.Lifecycle))
-		n.Urgent = true
 	default:
 		n.Title = string(t.Type)
 	}

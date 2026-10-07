@@ -40,8 +40,8 @@ Notifications are off until you ask for them:
 - `b` on a job: notify about that job only.
 - `N`: choose which events notify, or mute everything.
 
-Failures, all-passed and merges stay on screen until you dismiss them;
-other notifications stay 30 seconds (`timeout` below). They need
+Notifications stay on screen for 30 seconds (`timeout` below), where the
+desktop allows it (GNOME ignores it and uses its own, shorter timing). They need
 `notify-send` (libnotify). Clicking one opens the job or PR page.
 
 Even without notifications, nothing goes unnoticed: a PR whose state
@@ -102,7 +102,7 @@ status_template = 'PR {{if .Failed}}{{icon "failed"}}{{.Failed}}{{end}}'
 
 [notify]
 backend = "desktop"         # desktop | exec | none
-timeout = "30s"             # how long other notifications stay; "0" = until dismissed
+timeout = "30s"             # how long notifications stay on screen
 # command = "curl -s -d @- ntfy.sh/my-topic"   # for backend = "exec"
 ```
 

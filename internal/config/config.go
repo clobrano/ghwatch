@@ -83,7 +83,7 @@ type Config struct {
 	// NotifyCommand is run for the "exec" notifier, with the event as JSON
 	// on stdin (a plugin hook, e.g. for ntfy.sh or a chat webhook).
 	NotifyCommand string
-	// NotifyTimeout is how long a non-urgent desktop notification stays
+	// NotifyTimeout is how long a desktop notification stays
 	// on screen; 0 keeps it until dismissed.
 	NotifyTimeout time.Duration
 	// AutoStart lets clients spawn the daemon when it is not running.

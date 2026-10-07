@@ -22,10 +22,10 @@ func TestFormat(t *testing.T) {
 	}{
 		{model.Transition{Type: model.EventCheckFailed, Check: "e2e-aws", URL: "https://job"}, "× e2e-aws failed", "https://job", true},
 		{model.Transition{Type: model.EventCheckStarted, Check: "unit", URL: "https://job"}, "* unit started", "https://job", false},
-		{model.Transition{Type: model.EventAllPassed}, "√ all checks passed", "https://pr", true},
-		{model.Transition{Type: model.EventCheckFinished, Check: "e2e", To: model.Passed, URL: "https://job"}, "√ e2e passed", "https://job", true},
+		{model.Transition{Type: model.EventAllPassed}, "√ all checks passed", "https://pr", false},
+		{model.Transition{Type: model.EventCheckFinished, Check: "e2e", To: model.Passed, URL: "https://job"}, "√ e2e passed", "https://job", false},
 		{model.Transition{Type: model.EventRestarted}, "o CI restarted by a new push (a1b2c3d)", "https://pr", false},
-		{model.Transition{Type: model.EventFinished, To: model.Merged}, "M merged", "https://pr", true},
+		{model.Transition{Type: model.EventFinished, To: model.Merged}, "M merged", "https://pr", false},
 	}
 	for _, tt := range tests {
 		n := Format(tt.tr, it)
@@ -75,7 +75,7 @@ func TestDesktopExpiry(t *testing.T) {
 	if !strings.Contains(calls[0], "--expire-time=30000") || strings.Contains(calls[0], "critical") {
 		t.Errorf("normal notification: %q", calls[0])
 	}
-	if !strings.Contains(calls[1], "--urgency=critical --expire-time=0") {
-		t.Errorf("urgent notification: %q", calls[1])
+	if !strings.Contains(calls[1], "--expire-time=30000") || strings.Contains(calls[1], "critical") {
+		t.Errorf("urgent notification should not stick: %q", calls[1])
 	}
 }
