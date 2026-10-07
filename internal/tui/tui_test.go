@@ -395,18 +395,40 @@ func TestCancelledGroupAtBottom(t *testing.T) {
 func TestBelledJobsFirstInGroup(t *testing.T) {
 	m, _ := newModel()
 	keys(m, "j", "j") // tide, the second running job
+	order := func() []string {
+		var names []string
+		for _, r := range listRows(m.View(90, 20)) {
+			if f := strings.Fields(r); len(f) > 1 && !strings.Contains(r, "·") {
+				names = append(names, f[1])
+			}
+		}
+		return names
+	}
+
+	// Ringing a bell does not move the job under the cursor...
 	s := snapshot()
 	s.Items[0].WatchedChecks = []string{"tide"}
 	m.SetSnapshot(s)
-	body := listRows(m.View(90, 20))
-	want := []string{" Failed · 1", " × e2e-aws-ovn", " Running · 2", "›o tide", " * e2e-metal-ipi", " Passed · 1", " √ lint"}
-	for i, prefix := range want {
-		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
-			t.Errorf("list row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
-		}
+	if got := strings.Join(order(), " "); got != "e2e-aws-ovn e2e-metal-ipi tide lint" {
+		t.Errorf("after the bell, order = %s", got)
+	}
+	// ...the order catches up when the tab is opened again.
+	keys(m, "l", "h")
+	if got := strings.Join(order(), " "); got != "e2e-aws-ovn tide e2e-metal-ipi lint" {
+		t.Errorf("back on the tab, order = %s", got)
 	}
 	if _, c := m.selected(); c.Name != "tide" {
 		t.Errorf("selection moved to %s", c.Name)
+	}
+
+	// Silencing it does not move it either.
+	m.SetSnapshot(snapshot())
+	if got := strings.Join(order(), " "); got != "e2e-aws-ovn tide e2e-metal-ipi lint" {
+		t.Errorf("after silencing, order = %s", got)
+	}
+	keys(m, "l", "h")
+	if got := strings.Join(order(), " "); got != "e2e-aws-ovn e2e-metal-ipi tide lint" {
+		t.Errorf("silenced, back on the tab, order = %s", got)
 	}
 }
 

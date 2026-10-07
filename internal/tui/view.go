@@ -446,7 +446,7 @@ func (m *Model) checksBody(w, rows int) []line {
 	if it == nil {
 		return nil
 	}
-	checks := listed(it)
+	checks := m.listed(it)
 	if len(checks) == 0 {
 		if it.HeadSHA == "" {
 			return nil

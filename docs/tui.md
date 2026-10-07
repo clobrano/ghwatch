@@ -26,8 +26,9 @@ bottom:
   header with its count: **Failed**, then **Running** (including
   pending), then **Passed** (including skipped), then **Cancelled** at
   the bottom. Within a group, jobs with a bell (`b`) come first; the
-  others stay in the order they were first seen. When a job changes
-  group, the selection follows it. Jobs marked `opt` are not required
+  others stay in the order they were first seen. Ringing or silencing a
+  bell does not move the job: the order catches up the next time you
+  open the tab. When a job changes group, the selection follows it. Jobs marked `opt` are not required
   by branch protection. When a PR has required checks, a failing
   optional one does not turn the PR red.
 - **Footer:** what the main keys do (`h/l prev/next PR · j/k next/prev job
