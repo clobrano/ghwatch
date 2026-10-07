@@ -26,9 +26,10 @@ bottom:
   header with its count: **Failed**, then **Running** (including
   pending), then **Passed** (including skipped), then **Cancelled** at
   the bottom. Within a group, jobs with a bell (`b`) come first; the
-  others stay in the order they were first seen. When a job changes group, the selection follows it. Jobs
-  marked `opt` are not required by branch protection. When a PR has
-  required checks, a failing optional one does not turn the PR red.
+  others stay in the order they were first seen. When a job changes
+  group, the selection follows it. Jobs marked `opt` are not required
+  by branch protection. When a PR has required checks, a failing
+  optional one does not turn the PR red.
 - **Footer:** what the main keys do (`h/l prev/next PR · j/k next/prev job
   · enter open job · o open PR · …`), and the connection to the daemon.
   On narrow terminals the less important hints give way, and
