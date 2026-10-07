@@ -6,14 +6,18 @@ bottom:
 
 - **Title bar:** the app name and how many PRs are watched and in which
   state (failed, running, passed, queued, merged or closed). It also shows
-  how many PRs have alerts, whether notifications are muted, and when
+  how many PRs have alerts, how many changed since you last looked
+  (`•2 new`), whether notifications are muted, and when
   GitHub was last polled. The poll time turns yellow ("last poll … ago")
   while polling fails.
 - **Tabs:** one per PR, in the order they were added. A label is the
   tab's number (its `1`–`9` key), the PR's state icon, the number and a
   short name, and a bell when alerts are on. A PR from a repository other
   than the most common one gets a short repository prefix (`osac#58`).
-  The active tab is highlighted.
+  The active tab is highlighted. An orange `•` marks a PR that changed
+  since you last looked at it: its state changed (say, running to failed),
+  it got a new push, or it was merged or closed. Pressing any key while
+  on its tab clears the mark, in every open TUI.
 - **PR header:** reference, title and author, then head commit, push
   time, progress and failures. The PR's labels show below as chips in
   their GitHub colors.

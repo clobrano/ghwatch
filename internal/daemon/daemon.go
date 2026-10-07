@@ -327,6 +327,7 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 	}
 	cur.State = model.ItemState(cur)
 	cur.UpdatedAt = now
+	cur.Unseen = prev.Unseen || model.Noteworthy(prevp, cur)
 	d.snap.Items[idx] = cur
 
 	if d.snap.Settings.Mute || !cur.Alerts && len(cur.WatchedChecks) == 0 {
@@ -501,6 +502,19 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 				d.snap.Items[i].Alerts = *cmd.On
 				d.publishLocked()
 				return fmt.Sprintf("alerts %s for %s", onOff(*cmd.On), cmd.ID), nil
+			}
+		}
+		return "", fmt.Errorf("not watching %s", cmd.ID)
+	case ipc.OpSeen:
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		for i := range d.snap.Items {
+			if d.snap.Items[i].ID == cmd.ID {
+				if d.snap.Items[i].Unseen {
+					d.snap.Items[i].Unseen = false
+					d.publishLocked()
+				}
+				return "", nil
 			}
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)

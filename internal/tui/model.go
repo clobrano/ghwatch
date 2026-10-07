@@ -65,11 +65,32 @@ type Model struct {
 	flashUntil time.Time
 
 	quit bool
+
+	// seenSent holds the items this client already marked seen, so it asks
+	// the daemon once per change.
+	seenSent map[string]bool
 }
 
 // NewModel returns an empty model.
 func NewModel(b Backend) *Model {
 	return &Model{backend: b, now: time.Now, sel: map[string]selection{}, top: map[string]int{}, Color: true}
+}
+
+// markSeen tells the daemon the user looked at the active PR: any key
+// pressed while its tab is active counts.
+func (m *Model) markSeen() {
+	it := m.current()
+	if it == nil || !it.Unseen || !m.connected || m.quit {
+		return
+	}
+	if m.seenSent == nil {
+		m.seenSent = map[string]bool{}
+	}
+	if m.seenSent[it.ID] {
+		return
+	}
+	m.seenSent[it.ID] = true
+	m.backend.Send(ipc.Command{Op: ipc.OpSeen, ID: it.ID})
 }
 
 // Quit reports whether the user asked to leave.
@@ -85,6 +106,13 @@ func (m *Model) items() []model.Item {
 // SetSnapshot replaces the displayed state.
 func (m *Model) SetSnapshot(s *model.Snapshot) {
 	m.snap = s
+	if s != nil {
+		for _, it := range s.Items {
+			if !it.Unseen {
+				delete(m.seenSent, it.ID)
+			}
+		}
+	}
 	items := m.items()
 	if len(items) == 0 {
 		m.active, m.activeIdx = "", 0
@@ -242,6 +270,7 @@ func (m *Model) send(cmd ipc.Command) {
 
 // Key handles one key press.
 func (m *Model) Key(k string) {
+	defer m.markSeen()
 	switch m.mode {
 	case modeAdd:
 		m.keyInput(k, func(s string) {

@@ -684,3 +684,38 @@ func TestFooterHints(t *testing.T) {
 		t.Errorf("key style = %+v", l[1])
 	}
 }
+
+func TestUnseenMarks(t *testing.T) {
+	m, be := newModel()
+	s := snapshot()
+	s.Items[1].Unseen = true
+	m.SetSnapshot(s)
+	rows := m.View(120, 16)
+	if !strings.Contains(rows[0], "•1 new") {
+		t.Errorf("title = %q", rows[0])
+	}
+	if !strings.Contains(rows[1], "#131 sbd-timeout •") || strings.Contains(rows[1], "lease-race •") {
+		t.Errorf("tabs = %q", rows[1])
+	}
+
+	// Keys on another tab don't mark it seen; switching to it does, once.
+	keys(m, "j")
+	if len(be.sent) != 0 {
+		t.Fatalf("sent %+v while on another tab", be.sent)
+	}
+	keys(m, "l", "j", "k")
+	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpSeen || be.sent[0].ID != "pr:org/repo#131" {
+		t.Fatalf("sent %+v, want one seen", be.sent)
+	}
+
+	// Once the daemon cleared it, a new change is reported again.
+	s.Items[1].Unseen = false
+	m.SetSnapshot(s)
+	s2 := snapshot()
+	s2.Items[1].Unseen = true
+	m.SetSnapshot(s2)
+	keys(m, "j")
+	if len(be.sent) != 2 || be.sent[1].Op != ipc.OpSeen {
+		t.Errorf("sent %+v, want a second seen", be.sent)
+	}
+}
