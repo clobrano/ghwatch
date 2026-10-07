@@ -198,11 +198,18 @@ func checkGroup(s model.State) int {
 	return groupPassed
 }
 
-// grouped returns the checks in display order: failed, running, passed,
-// then cancelled. Within a group, checks keep the daemon's first-seen order.
-func grouped(checks []model.Check) []model.Check {
-	out := append([]model.Check(nil), checks...)
-	sort.SliceStable(out, func(i, j int) bool { return checkGroup(out[i].State) < checkGroup(out[j].State) })
+// grouped returns an item's checks in display order: failed, running,
+// passed, then cancelled. Within a group, checks with a bell come first;
+// otherwise checks keep the daemon's first-seen order.
+func grouped(it *model.Item) []model.Check {
+	out := append([]model.Check(nil), it.Checks...)
+	sort.SliceStable(out, func(i, j int) bool {
+		gi, gj := checkGroup(out[i].State), checkGroup(out[j].State)
+		if gi != gj {
+			return gi < gj
+		}
+		return it.Watching(out[i].Name) && !it.Watching(out[j].Name)
+	})
 	return out
 }
 
@@ -215,7 +222,7 @@ func queueRow(q *model.MergeQueue) model.Check {
 // listed returns the rows of an item's check list: its merge queue entry,
 // when it is queued, then its checks grouped.
 func listed(it *model.Item) []model.Check {
-	out := grouped(it.Checks)
+	out := grouped(it)
 	if q := it.MergeQueue; q != nil {
 		out = append([]model.Check{queueRow(q)}, out...)
 	}

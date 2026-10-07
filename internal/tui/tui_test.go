@@ -392,6 +392,24 @@ func TestCancelledGroupAtBottom(t *testing.T) {
 	}
 }
 
+func TestBelledJobsFirstInGroup(t *testing.T) {
+	m, _ := newModel()
+	keys(m, "j", "j") // tide, the second running job
+	s := snapshot()
+	s.Items[0].WatchedChecks = []string{"tide"}
+	m.SetSnapshot(s)
+	body := listRows(m.View(90, 20))
+	want := []string{" Failed · 1", " × e2e-aws-ovn", " Running · 2", "›o tide", " * e2e-metal-ipi", " Passed · 1", " √ lint"}
+	for i, prefix := range want {
+		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
+			t.Errorf("list row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
+		}
+	}
+	if _, c := m.selected(); c.Name != "tide" {
+		t.Errorf("selection moved to %s", c.Name)
+	}
+}
+
 func TestJobBell(t *testing.T) {
 	m, be := newModel()
 	keys(m, "j", "b") // e2e-metal-ipi
