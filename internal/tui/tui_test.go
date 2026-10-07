@@ -392,6 +392,46 @@ func TestCancelledGroupAtBottom(t *testing.T) {
 	}
 }
 
+func TestBelledJobsFirstInGroup(t *testing.T) {
+	m, _ := newModel()
+	keys(m, "j", "j") // tide, the second running job
+	order := func() []string {
+		var names []string
+		for _, r := range listRows(m.View(90, 20)) {
+			if f := strings.Fields(r); len(f) > 1 && !strings.Contains(r, "·") {
+				names = append(names, f[1])
+			}
+		}
+		return names
+	}
+
+	// Ringing a bell does not move the job under the cursor...
+	s := snapshot()
+	s.Items[0].WatchedChecks = []string{"tide"}
+	m.SetSnapshot(s)
+	if got := strings.Join(order(), " "); got != "e2e-aws-ovn e2e-metal-ipi tide lint" {
+		t.Errorf("after the bell, order = %s", got)
+	}
+	// ...the order catches up when the tab is opened again.
+	keys(m, "l", "h")
+	if got := strings.Join(order(), " "); got != "e2e-aws-ovn tide e2e-metal-ipi lint" {
+		t.Errorf("back on the tab, order = %s", got)
+	}
+	if _, c := m.selected(); c.Name != "tide" {
+		t.Errorf("selection moved to %s", c.Name)
+	}
+
+	// Silencing it does not move it either.
+	m.SetSnapshot(snapshot())
+	if got := strings.Join(order(), " "); got != "e2e-aws-ovn tide e2e-metal-ipi lint" {
+		t.Errorf("after silencing, order = %s", got)
+	}
+	keys(m, "l", "h")
+	if got := strings.Join(order(), " "); got != "e2e-aws-ovn e2e-metal-ipi tide lint" {
+		t.Errorf("silenced, back on the tab, order = %s", got)
+	}
+}
+
 func TestJobBell(t *testing.T) {
 	m, be := newModel()
 	keys(m, "j", "b") // e2e-metal-ipi
@@ -682,5 +722,40 @@ func TestFooterHints(t *testing.T) {
 	// Keys stand out in the accent.
 	if l := hintLine(200); l[1].style != sBold+sAccent || l[1].text != "h/l" {
 		t.Errorf("key style = %+v", l[1])
+	}
+}
+
+func TestUnseenMarks(t *testing.T) {
+	m, be := newModel()
+	s := snapshot()
+	s.Items[1].Unseen = true
+	m.SetSnapshot(s)
+	rows := m.View(120, 16)
+	if !strings.Contains(rows[0], "•1 new") {
+		t.Errorf("title = %q", rows[0])
+	}
+	if !strings.Contains(rows[1], "#131 sbd-timeout •") || strings.Contains(rows[1], "lease-race •") {
+		t.Errorf("tabs = %q", rows[1])
+	}
+
+	// Keys on another tab don't mark it seen; switching to it does, once.
+	keys(m, "j")
+	if len(be.sent) != 0 {
+		t.Fatalf("sent %+v while on another tab", be.sent)
+	}
+	keys(m, "l", "j", "k")
+	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpSeen || be.sent[0].ID != "pr:org/repo#131" {
+		t.Fatalf("sent %+v, want one seen", be.sent)
+	}
+
+	// Once the daemon cleared it, a new change is reported again.
+	s.Items[1].Unseen = false
+	m.SetSnapshot(s)
+	s2 := snapshot()
+	s2.Items[1].Unseen = true
+	m.SetSnapshot(s2)
+	keys(m, "j")
+	if len(be.sent) != 2 || be.sent[1].Op != ipc.OpSeen {
+		t.Errorf("sent %+v, want a second seen", be.sent)
 	}
 }

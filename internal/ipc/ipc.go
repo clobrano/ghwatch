@@ -31,6 +31,8 @@ const (
 	OpEvents      = "events" // Events: enabled event types
 	OpMute        = "mute"   // On: global mute
 	OpRetest      = "retest" // ID: re-trigger failed CI
+	// OpSeen clears an item's unseen mark: ID.
+	OpSeen = "seen"
 )
 
 // Message types.

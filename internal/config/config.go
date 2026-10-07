@@ -68,7 +68,7 @@ func (p Paths) Ensure() error {
 
 // DefaultStatusTemplate renders e.g. "PR ●3 ✓5 ✗1", with the icons of the
 // configured set.
-const DefaultStatusTemplate = `PR {{if .Running}}{{icon "running"}}{{.Running}} {{end}}{{if .Passed}}{{icon "passed"}}{{.Passed}} {{end}}{{if .Queued}}{{icon "queued"}}{{.Queued}} {{end}}{{if .Failed}}{{icon "failed"}}{{.Failed}} {{end}}{{if .Stale}}!{{end}}`
+const DefaultStatusTemplate = `PR {{if .Running}}{{icon "running"}}{{.Running}} {{end}}{{if .Passed}}{{icon "passed"}}{{.Passed}} {{end}}{{if .Queued}}{{icon "queued"}}{{.Queued}} {{end}}{{if .Failed}}{{icon "failed"}}{{.Failed}} {{end}}{{if .Unseen}}•{{.Unseen}} {{end}}{{if .Stale}}!{{end}}`
 
 // Config is the content of config.toml.
 type Config struct {
@@ -83,6 +83,9 @@ type Config struct {
 	// NotifyCommand is run for the "exec" notifier, with the event as JSON
 	// on stdin (a plugin hook, e.g. for ntfy.sh or a chat webhook).
 	NotifyCommand string
+	// NotifyTimeout is how long a desktop notification stays
+	// on screen; 0 keeps it until dismissed.
+	NotifyTimeout time.Duration
 	// AutoStart lets clients spawn the daemon when it is not running.
 	AutoStart bool
 	// Icons is the icon set: "fancy" (Unicode symbols, the default) or
@@ -98,6 +101,7 @@ func Default() Config {
 		Notifier:       "desktop",
 		AutoStart:      true,
 		Icons:          "fancy",
+		NotifyTimeout:  30 * time.Second,
 	}
 }
 
@@ -137,6 +141,18 @@ func Load(path string) (Config, error) {
 			cfg.StatusTemplate, err = asString(v)
 		case "notifier", "notify.backend":
 			cfg.Notifier, err = asString(v)
+		case "notify_timeout", "notify.timeout":
+			switch x := v.(type) {
+			case int64:
+				cfg.NotifyTimeout = time.Duration(x) * time.Second
+			case string:
+				cfg.NotifyTimeout, err = time.ParseDuration(x)
+			default:
+				err = fmt.Errorf("want seconds or a duration string")
+			}
+			if err == nil && cfg.NotifyTimeout < 0 {
+				err = fmt.Errorf("must not be negative")
+			}
 		case "notify_command", "notify.command":
 			cfg.NotifyCommand, err = asString(v)
 		case "icons", "ui.icons":

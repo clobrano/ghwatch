@@ -182,3 +182,27 @@ func TestIconSets(t *testing.T) {
 		t.Error("unknown set accepted")
 	}
 }
+
+func TestNoteworthy(t *testing.T) {
+	merged := item("a", chk("x", Passed))
+	merged.Lifecycle = LifeMerged
+	tests := []struct {
+		name string
+		prev *Item
+		cur  Item
+		want bool
+	}{
+		{"first sight", nil, item("a", chk("x", Failed)), false},
+		{"same state", ptr(item("a", chk("x", Running))), item("a", chk("x", Running), chk("y", Running)), false},
+		{"pending to running", ptr(item("a")), item("a", chk("x", Running)), false},
+		{"running to failed", ptr(item("a", chk("x", Running))), item("a", chk("x", Failed)), true},
+		{"running to passed", ptr(item("a", chk("x", Running))), item("a", chk("x", Passed)), true},
+		{"new push", ptr(item("a", chk("x", Passed))), item("b", chk("x", Passed)), true},
+		{"merged", ptr(item("a", chk("x", Passed))), merged, true},
+	}
+	for _, tt := range tests {
+		if got := Noteworthy(tt.prev, tt.cur); got != tt.want {
+			t.Errorf("%s: Noteworthy = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}

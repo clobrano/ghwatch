@@ -15,6 +15,10 @@ const appTitle = "GHWATCH"
 // appTagline follows the name in the title bar.
 const appTagline = "GitHub PR watcher"
 
+// unseenMark flags PRs that changed since a user last looked at them.
+// The bullet is in every common monospace font.
+const unseenMark = "•"
+
 // bellIcon marks alerts: the Nerd Fonts codicon bell (nf-cod-bell).
 const bellIcon = "\ueaa2"
 
@@ -96,7 +100,7 @@ func (m *Model) titleBar(w int) line {
 	}
 	left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%d %s", len(items), prs), sMuted})
 	counts := map[model.State]int{}
-	alerts := 0
+	alerts, unseen := 0, 0
 	for _, it := range items {
 		st := model.ItemState(it)
 		if st == model.Pending {
@@ -109,6 +113,9 @@ func (m *Model) titleBar(w int) line {
 		if it.Alerts || len(it.WatchedChecks) > 0 {
 			alerts++
 		}
+		if it.Unseen {
+			unseen++
+		}
 	}
 	for _, st := range []model.State{model.Failed, model.Running, model.Passed, model.Queued, model.Merged} {
 		if counts[st] > 0 {
@@ -117,6 +124,9 @@ func (m *Model) titleBar(w int) line {
 	}
 	if alerts > 0 {
 		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s %d", bellIcon, alerts), sCyan})
+	}
+	if unseen > 0 {
+		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s%d new", unseenMark, unseen), sBold + sYellow})
 	}
 	if m.snap.Settings.Mute {
 		left = append(left, seg{" · ", sDim}, seg{"muted", sYellow})
@@ -164,6 +174,9 @@ func (m *Model) tabLabels() []line {
 		l := line{{"  " + strconv.Itoa(i+1) + ":", sMuted}, icon(st), {" " + name, sMuted}}
 		if it.Alerts || len(it.WatchedChecks) > 0 {
 			l = append(l, seg{" " + bellIcon, sAccent})
+		}
+		if it.Unseen {
+			l = append(l, seg{" " + unseenMark, sBold + sYellow})
 		}
 		l = append(l, seg{"  ", ""})
 		if i == m.activeIdx {
@@ -433,7 +446,7 @@ func (m *Model) checksBody(w, rows int) []line {
 	if it == nil {
 		return nil
 	}
-	checks := listed(it)
+	checks := m.listed(it)
 	if len(checks) == 0 {
 		if it.HeadSHA == "" {
 			return nil

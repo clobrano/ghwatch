@@ -130,7 +130,10 @@ func runDaemon(ctx context.Context, paths config.Paths, cfg config.Config, idleE
 	}
 	switch cfg.Notifier {
 	case "desktop", "":
-		d.Notifier = &notify.Desktop{Open: func(url string) error { return browser.Open(cfg.Browser, url) }}
+		d.Notifier = &notify.Desktop{
+			Open:   func(url string) error { return browser.Open(cfg.Browser, url) },
+			Expire: cfg.NotifyTimeout,
+		}
 	case "exec":
 		if cfg.NotifyCommand == "" {
 			return errors.New(`notifier "exec" needs notify_command in config.toml`)
@@ -283,9 +286,9 @@ func cmdList(paths config.Paths, w io.Writer) error {
 
 // StatusData is the data available to the status template.
 type StatusData struct {
-	Running, Pending, Passed, Failed, Queued, Merged, Closed, Total int
-	Stale                                                           bool
-	Items                                                           []model.Item
+	Running, Pending, Passed, Failed, Queued, Merged, Closed, Total, Unseen int
+	Stale                                                                   bool
+	Items                                                                   []model.Item
 }
 
 func cmdStatus(paths config.Paths, cfg config.Config, args []string, w io.Writer) error {
@@ -335,6 +338,9 @@ func summarize(snap *model.Snapshot) StatusData {
 	d.Items = snap.Items
 	for _, it := range snap.Items {
 		d.Total++
+		if it.Unseen {
+			d.Unseen++
+		}
 		switch model.ItemState(it) {
 		case model.Running:
 			d.Running++

@@ -58,6 +58,9 @@ type Desktop struct {
 	Open Opener
 	// Timeout is how long to wait for a click before giving up.
 	Timeout time.Duration
+	// Expire is how long a notification stays on screen; 0 keeps it until
+	// dismissed. Some servers (GNOME Shell) ignore it.
+	Expire time.Duration
 
 	once    sync.Once
 	actions bool
@@ -82,9 +85,9 @@ func (d *Desktop) Notify(ctx context.Context, n Notification) error {
 		return d.err
 	}
 	args := []string{"--app-name=ghwatch"}
-	if n.Urgent {
-		args = append(args, "--urgency=critical")
-	}
+	// Urgent notifications are not sent as critical: most servers keep
+	// critical ones on screen until dismissed, ignoring Expire.
+	args = append(args, fmt.Sprintf("--expire-time=%d", d.Expire.Milliseconds()))
 	if !d.actions || n.URL == "" || d.Open == nil {
 		args = append(args, "--", n.Title, n.Body)
 		return exec.CommandContext(ctx, "notify-send", args...).Run()

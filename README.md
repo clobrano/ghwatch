@@ -40,7 +40,13 @@ Notifications are off until you ask for them:
 - `b` on a job: notify about that job only.
 - `N`: choose which events notify, or mute everything.
 
-They need `notify-send` (libnotify). Clicking one opens the job or PR page.
+Notifications stay on screen for 30 seconds (`timeout` below), where the
+desktop allows it (GNOME ignores it and uses its own, shorter timing). They need
+`notify-send` (libnotify). Clicking one opens the job or PR page.
+
+Even without notifications, nothing goes unnoticed: a PR whose state
+changed since you last looked gets an orange `•` on its tab, and the
+title bar counts them (`•2 new`). The mark clears when you go to that tab.
 
 ## More
 
@@ -51,7 +57,8 @@ set -g status-right '#(ghwatch status) %H:%M'
 set -g status-interval 10
 ```
 
-This shows e.g. `PR ●3 ✓5 ✗1`. A trailing `!` means the data is stale.
+This shows e.g. `PR ●3 ✓5 ✗1 •2`: running, passed and failed PRs, and how
+many changed since you last looked. A trailing `!` means the data is stale.
 `ghwatch status` reads a local file, so it costs nothing to refresh often.
 
 ghwatch uses 24-bit colors. Inside tmux, enable true color, or the colors
@@ -95,14 +102,15 @@ status_template = 'PR {{if .Failed}}{{icon "failed"}}{{.Failed}}{{end}}'
 
 [notify]
 backend = "desktop"         # desktop | exec | none
+timeout = "30s"             # how long notifications stay on screen
 # command = "curl -s -d @- ntfy.sh/my-topic"   # for backend = "exec"
 ```
 
 - **Icons:** `icons = "safe"` uses characters every common monospace font
   has. Run `ghwatch icons` to compare the sets in your terminal.
 - **Status template:** a Go `text/template` over `.Running`, `.Pending`,
-  `.Passed`, `.Failed`, `.Queued`, `.Merged`, `.Closed`, `.Total` and
-  `.Stale`. `{{icon "<state>"}}` prints a state's icon.
+  `.Passed`, `.Failed`, `.Queued`, `.Merged`, `.Closed`, `.Total`,
+  `.Unseen` and `.Stale`. `{{icon "<state>"}}` prints a state's icon.
 - **Exec notifier:** the `exec` backend pipes each notification as JSON
   to `command`, to send it anywhere, e.g. ntfy.sh or a chat webhook.
 - **The watched PRs** are in `~/.config/ghwatch/watch`, one per line. You
