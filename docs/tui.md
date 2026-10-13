@@ -6,14 +6,18 @@ bottom:
 
 - **Title bar:** the app name and how many PRs are watched and in which
   state (failed, running, passed, queued, merged or closed). It also shows
-  how many PRs have alerts, whether notifications are muted, and when
+  how many PRs have alerts, how many changed since you last looked
+  (`•2 new`), whether notifications are muted, and when
   GitHub was last polled. The poll time turns yellow ("last poll … ago")
   while polling fails.
 - **Tabs:** one per PR, in the order they were added. A label is the
   tab's number (its `1`–`9` key), the PR's state icon, the number and a
   short name, and a bell when alerts are on. A PR from a repository other
   than the most common one gets a short repository prefix (`osac#58`).
-  The active tab is highlighted.
+  The active tab is highlighted. An orange `•` marks a PR that changed
+  since you last looked at it: its state changed (say, running to failed),
+  it got a new push, or it was merged or closed. Pressing any key while
+  on its tab clears the mark, in every open TUI.
 - **PR header:** reference, title and author, then head commit, push
   time, progress and failures. The PR's labels show below as chips in
   their GitHub colors.
@@ -21,10 +25,12 @@ bottom:
   selected job highlighted. Jobs are split into groups, each under a
   header with its count: **Failed**, then **Running** (including
   pending), then **Passed** (including skipped), then **Cancelled** at
-  the bottom. Within a group, jobs stay in the order they were first
-  seen, and when a job changes group, the selection follows it. Jobs
-  marked `opt` are not required by branch protection. When a PR has
-  required checks, a failing optional one does not turn the PR red.
+  the bottom. Within a group, jobs with a bell (`b`) come first; the
+  others stay in the order they were first seen. Ringing or silencing a
+  bell does not move the job: the order catches up the next time you
+  open the tab. When a job changes group, the selection follows it. Jobs marked `opt` are not required
+  by branch protection. When a PR has required checks, a failing
+  optional one does not turn the PR red.
 - **Footer:** what the main keys do (`h/l prev/next PR · j/k next/prev job
   · enter open job · o open PR · …`), and the connection to the daemon.
   On narrow terminals the less important hints give way, and

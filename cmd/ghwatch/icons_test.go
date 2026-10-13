@@ -78,3 +78,21 @@ func TestStatusUsesIconSet(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusUnseen(t *testing.T) {
+	dir := t.TempDir()
+	paths := config.Paths{ConfigDir: dir, StateDir: dir, RuntimeDir: dir}
+	daemon.WriteSnapshot(paths.Snapshot(), &model.Snapshot{Schema: 1, GeneratedAt: time.Now(), Items: []model.Item{
+		{Lifecycle: model.Open, Unseen: true, Checks: []model.Check{{Name: "x", State: model.Failed}}},
+		{Lifecycle: model.Open, Checks: []model.Check{{Name: "x", State: model.Passed}}},
+	}})
+	lock, _ := daemon.AcquireLock(paths.Lock())
+	defer lock.Release()
+	var out bytes.Buffer
+	if err := cmdStatus(paths, config.Default(), nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "PR √1 ×1 •1\n" {
+		t.Errorf("status = %q", out.String())
+	}
+}

@@ -147,7 +147,10 @@ type Item struct {
 	// each of their state changes notifies, even with Alerts off. They are
 	// kept across new pushes, since re-run jobs keep their names.
 	WatchedChecks []string `json:"watched_checks,omitempty"`
-	Checks        []Check  `json:"checks"`
+	// Unseen is set when the item changed in a way worth a look (its
+	// state, a new push, a merge) and cleared once a user looked at it.
+	Unseen bool    `json:"unseen,omitempty"`
+	Checks []Check `json:"checks"`
 	// Labels are the item's labels, in GitHub's order.
 	Labels []Label `json:"labels,omitempty"`
 	// MergeQueue is set while the item waits in a merge queue.
@@ -156,6 +159,22 @@ type Item struct {
 	// the item is then the last known state.
 	Error     string    `json:"error,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Noteworthy reports whether the change from prev to cur is worth a look:
+// a new push, or a different displayed state. Pending and running count
+// as the same, so a PR starting its checks is not one.
+func Noteworthy(prev *Item, cur Item) bool {
+	if prev == nil || prev.HeadSHA == "" {
+		return false
+	}
+	busy := func(s State) State {
+		if s == Pending {
+			return Running
+		}
+		return s
+	}
+	return prev.HeadSHA != cur.HeadSHA || busy(ItemState(*prev)) != busy(ItemState(cur))
 }
 
 // Watching reports whether the check named name has its own notifications.

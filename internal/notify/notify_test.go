@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/clobrano/ghwatch/internal/model"
 )
@@ -48,5 +49,33 @@ func TestExec(t *testing.T) {
 	err := (Exec{Command: "echo boom >&2; exit 3"}).Notify(context.Background(), n)
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Errorf("failing command: %v", err)
+	}
+}
+
+func TestDesktopExpiry(t *testing.T) {
+	// A stand-in notify-send records its arguments, one call per line.
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	os.WriteFile(filepath.Join(dir, "notify-send"), []byte("#!/bin/sh\n[ \"$1\" = --help ] && exit 0\necho \"$*\" >> "+log+"\n"), 0o700)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	d := &Desktop{Expire: 30 * time.Second}
+	ctx := context.Background()
+	if err := d.Notify(ctx, Notification{Title: "started", Body: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Notify(ctx, Notification{Title: "failed", Body: "b", Urgent: true}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(log)
+	calls := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(calls) != 2 {
+		t.Fatalf("calls = %q", calls)
+	}
+	if !strings.Contains(calls[0], "--expire-time=30000") || strings.Contains(calls[0], "critical") {
+		t.Errorf("normal notification: %q", calls[0])
+	}
+	if !strings.Contains(calls[1], "--expire-time=30000") || strings.Contains(calls[1], "critical") {
+		t.Errorf("urgent notification should not stick: %q", calls[1])
 	}
 }

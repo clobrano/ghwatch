@@ -71,3 +71,20 @@ func TestIconsSetting(t *testing.T) {
 		t.Error("unknown icon set accepted")
 	}
 }
+
+func TestNotifyTimeout(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if cfg, _ := Load(path); cfg.NotifyTimeout != 30*time.Second {
+		t.Errorf("default = %s", cfg.NotifyTimeout)
+	}
+	for in, want := range map[string]time.Duration{"[notify]\ntimeout = \"2m\"\n": 2 * time.Minute, "notify_timeout = 0\n": 0, "[notify]\ntimeout = 45\n": 45 * time.Second} {
+		os.WriteFile(path, []byte(in), 0o600)
+		if cfg, err := Load(path); err != nil || cfg.NotifyTimeout != want {
+			t.Errorf("%q: %s, %v", in, cfg.NotifyTimeout, err)
+		}
+	}
+	os.WriteFile(path, []byte("notify_timeout = \"-1s\"\n"), 0o600)
+	if _, err := Load(path); err == nil {
+		t.Error("negative timeout accepted")
+	}
+}

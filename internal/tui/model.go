@@ -65,11 +65,39 @@ type Model struct {
 	flashUntil time.Time
 
 	quit bool
+
+	// pinned holds the belled checks of the item pinnedID, as they were
+	// when its tab was opened: they lead their groups. Toggling a bell
+	// does not move a job under the cursor; the order catches up the next
+	// time the tab is opened.
+	pinnedID string
+	pinned   map[string]bool
+
+	// seenSent holds the items this client already marked seen, so it asks
+	// the daemon once per change.
+	seenSent map[string]bool
 }
 
 // NewModel returns an empty model.
 func NewModel(b Backend) *Model {
 	return &Model{backend: b, now: time.Now, sel: map[string]selection{}, top: map[string]int{}, Color: true}
+}
+
+// markSeen tells the daemon the user looked at the active PR: any key
+// pressed while its tab is active counts.
+func (m *Model) markSeen() {
+	it := m.current()
+	if it == nil || !it.Unseen || !m.connected || m.quit {
+		return
+	}
+	if m.seenSent == nil {
+		m.seenSent = map[string]bool{}
+	}
+	if m.seenSent[it.ID] {
+		return
+	}
+	m.seenSent[it.ID] = true
+	m.backend.Send(ipc.Command{Op: ipc.OpSeen, ID: it.ID})
 }
 
 // Quit reports whether the user asked to leave.
@@ -85,6 +113,13 @@ func (m *Model) items() []model.Item {
 // SetSnapshot replaces the displayed state.
 func (m *Model) SetSnapshot(s *model.Snapshot) {
 	m.snap = s
+	if s != nil {
+		for _, it := range s.Items {
+			if !it.Unseen {
+				delete(m.seenSent, it.ID)
+			}
+		}
+	}
 	items := m.items()
 	if len(items) == 0 {
 		m.active, m.activeIdx = "", 0
@@ -132,6 +167,8 @@ func (m *Model) setActive(i int) {
 	}
 	i = min(max(i, 0), len(items)-1)
 	m.activeIdx, m.active = i, items[i].ID
+	m.pinnedID = "" // opening a tab catches up its order with the bells
+
 }
 
 // selection remembers the selected check by identity, so it follows the
@@ -170,12 +207,31 @@ func checkGroup(s model.State) int {
 	return groupPassed
 }
 
-// grouped returns the checks in display order: failed, running, passed,
-// then cancelled. Within a group, checks keep the daemon's first-seen order.
-func grouped(checks []model.Check) []model.Check {
+// grouped returns checks in display order: failed, running, passed, then
+// cancelled. Within a group, pinned checks come first; otherwise checks
+// keep the daemon's first-seen order.
+func grouped(checks []model.Check, pinned map[string]bool) []model.Check {
 	out := append([]model.Check(nil), checks...)
-	sort.SliceStable(out, func(i, j int) bool { return checkGroup(out[i].State) < checkGroup(out[j].State) })
+	sort.SliceStable(out, func(i, j int) bool {
+		gi, gj := checkGroup(out[i].State), checkGroup(out[j].State)
+		if gi != gj {
+			return gi < gj
+		}
+		return pinned[out[i].Name] && !pinned[out[j].Name]
+	})
 	return out
+}
+
+// pinnedChecks returns the checks leading their groups for it: its belled
+// checks, taken when its tab was opened and kept while it stays open.
+func (m *Model) pinnedChecks(it *model.Item) map[string]bool {
+	if m.pinnedID != it.ID {
+		m.pinnedID, m.pinned = it.ID, map[string]bool{}
+		for _, name := range it.WatchedChecks {
+			m.pinned[name] = true
+		}
+	}
+	return m.pinned
 }
 
 // queueRow is the list row standing for an item's merge queue entry: it
@@ -186,8 +242,8 @@ func queueRow(q *model.MergeQueue) model.Check {
 
 // listed returns the rows of an item's check list: its merge queue entry,
 // when it is queued, then its checks grouped.
-func listed(it *model.Item) []model.Check {
-	out := grouped(it.Checks)
+func (m *Model) listed(it *model.Item) []model.Check {
+	out := grouped(it.Checks, m.pinnedChecks(it))
 	if q := it.MergeQueue; q != nil {
 		out = append([]model.Check{queueRow(q)}, out...)
 	}
@@ -212,7 +268,7 @@ func (m *Model) selected() (*model.Item, *model.Check) {
 	if it == nil {
 		return nil, nil
 	}
-	checks := listed(it)
+	checks := m.listed(it)
 	if len(checks) == 0 {
 		return it, nil
 	}
@@ -224,7 +280,7 @@ func (m *Model) moveCheck(delta int) {
 	if it == nil {
 		return
 	}
-	checks := listed(it)
+	checks := m.listed(it)
 	if len(checks) == 0 {
 		return
 	}
@@ -242,6 +298,7 @@ func (m *Model) send(cmd ipc.Command) {
 
 // Key handles one key press.
 func (m *Model) Key(k string) {
+	defer m.markSeen()
 	switch m.mode {
 	case modeAdd:
 		m.keyInput(k, func(s string) {
@@ -445,7 +502,7 @@ func (m *Model) findMatches() ([]model.Check, []int) {
 	if it == nil {
 		return nil, nil
 	}
-	checks := listed(it)
+	checks := m.listed(it)
 	q := strings.ToLower(string(m.input))
 	type hit struct{ idx, score int }
 	var hits []hit

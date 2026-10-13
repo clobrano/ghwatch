@@ -468,3 +468,41 @@ func TestFinishedItemRefreshedOnStart(t *testing.T) {
 		t.Errorf("finished item fetched %d times, want 1", n)
 	}
 }
+
+func TestUnseen(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	os.WriteFile(paths.Watchlist(), []byte("o/r#1\n"), 0o600)
+	fake := &fakePR{items: map[string]model.Item{}}
+	set := func(s model.State) {
+		fake.set(model.Item{ID: "pr:o/r#1", Repo: "o/r", Number: 1, HeadSHA: "a", Lifecycle: model.Open,
+			Checks: []model.Check{check("unit", s)}})
+	}
+	set(model.Running)
+	_, cancel, done := startDaemon(t, paths, fake, notify.Nop{})
+	defer func() { cancel(); <-done }()
+	c := dial(t, paths)
+	ctx := context.Background()
+	waitFor(t, c, "first poll", func(s *model.Snapshot) bool { return s.Items[0].HeadSHA == "a" && !s.Items[0].Unseen })
+
+	// A failure marks the PR, whatever its alerts.
+	set(model.Failed)
+	c.Do(ctx, ipc.Command{Op: ipc.OpPoll})
+	waitFor(t, c, "unseen", func(s *model.Snapshot) bool { return s.Items[0].Unseen })
+
+	// It stays marked across polls without changes, and is saved.
+	c.Do(ctx, ipc.Command{Op: ipc.OpPoll})
+	waitFor(t, c, "still unseen", func(s *model.Snapshot) bool { return s.Items[0].Unseen })
+	if snap, _ := ReadSnapshot(paths.Snapshot()); !snap.Items[0].Unseen {
+		t.Error("unseen mark not saved")
+	}
+
+	// Looking at it clears the mark for every client.
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpSeen, ID: "pr:o/r#1"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, c, "seen", func(s *model.Snapshot) bool { return !s.Items[0].Unseen })
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpSeen, ID: "pr:o/r#9"}); err == nil {
+		t.Error("seen on an unknown PR succeeded")
+	}
+}
