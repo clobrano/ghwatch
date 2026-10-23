@@ -58,6 +58,7 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `Y` | copy the selected job's URL |
 | `n` | toggle notifications for the current PR |
 | `b` | toggle notifications for the selected job |
+| `m` | mute all of this PR's notifications, or restore them as they were |
 | `N` | notification settings: event types and global mute |
 | `a` | add a PR |
 | `d` | unwatch the current PR (in every client) |

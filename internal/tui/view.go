@@ -22,6 +22,14 @@ const unseenMark = "•"
 // bellIcon marks alerts: the Nerd Fonts codicon bell (nf-cod-bell).
 const bellIcon = "\ueaa2"
 
+// bellStyle is the style for an item's bells, or dimmed while it is muted.
+func bellStyle(it *model.Item, style string) string {
+	if it.Muted {
+		return sDim
+	}
+	return style
+}
+
 func stateStyle(s model.State) string {
 	switch s {
 	case model.Failed:
@@ -110,7 +118,7 @@ func (m *Model) titleBar(w int) line {
 			st = model.Merged
 		}
 		counts[st]++
-		if it.Alerts || len(it.WatchedChecks) > 0 {
+		if it.HasAlerts() && !it.Muted {
 			alerts++
 		}
 		if it.Unseen {
@@ -172,8 +180,8 @@ func (m *Model) tabLabels() []line {
 			name += " " + s
 		}
 		l := line{{"  " + strconv.Itoa(i+1) + ":", sMuted}, icon(st), {" " + name, sMuted}}
-		if it.Alerts || len(it.WatchedChecks) > 0 {
-			l = append(l, seg{" " + bellIcon, sAccent})
+		if it.HasAlerts() {
+			l = append(l, seg{" " + bellIcon, bellStyle(&it, sAccent)})
 		}
 		if it.Unseen {
 			l = append(l, seg{" " + unseenMark, sBold + sYellow})
@@ -304,10 +312,13 @@ func (m *Model) header(w int) []line {
 		}
 
 	}
-	if it.Alerts {
+	if it.Muted {
+		// The muted alerts are restored as they were: no need to detail them.
+		add(seg{bellIcon + " muted (m restores)", sMuted})
+	} else if it.Alerts {
 		add(seg{"alerts on", sAccent})
 	}
-	if n := len(it.WatchedChecks); n > 0 {
+	if n := len(it.WatchedChecks); n > 0 && !it.Muted {
 		jobs := "jobs"
 		if n == 1 {
 			jobs = "job"
@@ -554,7 +565,7 @@ func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, an
 	name := line{{" " + padRight(c.Name, nameW), nameStyle}}
 	if it.Watching(c.Name) {
 		n := truncate(c.Name, nameW-2)
-		name = line{{" " + n, nameStyle}, {" " + bellIcon, sCyan}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
+		name = line{{" " + n, nameStyle}, {" " + bellIcon, bellStyle(it, sCyan)}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
 	}
 	when, whenStyle := m.checkTime(c), stateStyle(c.State)
 	if c.State == model.Queued {
@@ -682,7 +693,8 @@ var helpSections = []struct {
 	{"Notifications", [][2]string{
 		{"n", "alerts for this PR"},
 		{"b", "alerts for this job"},
-		{"N", "alert settings, mute"},
+		{"m", "mute / restore this PR's alerts"},
+		{"N", "alert settings, mute all"},
 	}},
 	{"Pull requests", [][2]string{
 		{"a", "add a PR"},

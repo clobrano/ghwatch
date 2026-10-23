@@ -38,6 +38,8 @@ Notifications are off until you ask for them:
 - `n` on a PR: notify about its checks (failures, all passed, new push,
   merged).
 - `b` on a job: notify about that job only.
+- `m` on a PR: mute all its notifications; `m` again restores them as
+  they were.
 - `N`: choose which events notify, or mute everything.
 
 Notifications stay on screen for 30 seconds (`timeout` below), where the

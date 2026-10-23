@@ -387,6 +387,15 @@ func (m *Model) keyNormal(k string) {
 			on := !it.Watching(c.Name)
 			m.send(ipc.Command{Op: ipc.OpCheckAlerts, ID: it.ID, Check: c.Name, On: &on})
 		}
+	case "m":
+		if it := m.current(); it != nil {
+			if !it.HasAlerts() {
+				m.setFlash("no alerts to mute on this PR (n, b set them)", true)
+			} else {
+				on := !it.Muted
+				m.send(ipc.Command{Op: ipc.OpMuteItem, ID: it.ID, On: &on})
+			}
+		}
 	case "N":
 		m.mode, m.evSel = modeEvents, 0
 	case "a":

@@ -303,6 +303,7 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 	d.fresh[cur.ID] = true
 	cur.Alerts = prev.Alerts
 	cur.WatchedChecks = prev.WatchedChecks
+	cur.Muted = prev.Muted
 	var prevp *model.Item
 	if prev.HeadSHA != "" {
 		prevp = &prev
@@ -330,7 +331,7 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 	cur.Unseen = prev.Unseen || model.Noteworthy(prevp, cur)
 	d.snap.Items[idx] = cur
 
-	if d.snap.Settings.Mute || !cur.Alerts && len(cur.WatchedChecks) == 0 {
+	if d.snap.Settings.Mute || cur.Muted || !cur.HasAlerts() {
 		return nil
 	}
 	var notes []notify.Notification
@@ -500,9 +501,32 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 		for i := range d.snap.Items {
 			if d.snap.Items[i].ID == cmd.ID {
 				d.snap.Items[i].Alerts = *cmd.On
+				unmuteOnChange(&d.snap.Items[i], *cmd.On)
 				d.publishLocked()
 				return fmt.Sprintf("alerts %s for %s", onOff(*cmd.On), cmd.ID), nil
 			}
+		}
+		return "", fmt.Errorf("not watching %s", cmd.ID)
+	case ipc.OpMuteItem:
+		if cmd.On == nil {
+			return "", errors.New("mute_item: missing on")
+		}
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		for i := range d.snap.Items {
+			it := &d.snap.Items[i]
+			if it.ID != cmd.ID {
+				continue
+			}
+			if *cmd.On && !it.HasAlerts() {
+				return "", fmt.Errorf("no alerts to mute on %s", cmd.ID)
+			}
+			it.Muted = *cmd.On
+			d.publishLocked()
+			if *cmd.On {
+				return fmt.Sprintf("alerts muted for %s", cmd.ID), nil
+			}
+			return fmt.Sprintf("alerts restored for %s", cmd.ID), nil
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)
 	case ipc.OpSeen:
@@ -537,6 +561,7 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 				watched = nil
 			}
 			it.WatchedChecks = watched
+			unmuteOnChange(it, *cmd.On)
 			d.publishLocked()
 			return fmt.Sprintf("alerts %s for job %s", onOff(*cmd.On), cmd.Check), nil
 		}
@@ -673,4 +698,13 @@ func (d *Daemon) retest(ctx context.Context, id string) (string, error) {
 		d.RequestPoll()
 	}
 	return info, err
+}
+
+// unmuteOnChange unmutes an item when an alert is turned on, so the new
+// alert works at once, or when its last alert is turned off, leaving
+// nothing to restore.
+func unmuteOnChange(it *model.Item, on bool) {
+	if on || !it.HasAlerts() {
+		it.Muted = false
+	}
 }
