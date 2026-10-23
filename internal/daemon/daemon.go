@@ -529,6 +529,22 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 			return fmt.Sprintf("alerts restored for %s", cmd.ID), nil
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)
+	case ipc.OpClearAlerts:
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		for i := range d.snap.Items {
+			it := &d.snap.Items[i]
+			if it.ID != cmd.ID {
+				continue
+			}
+			if !it.HasAlerts() {
+				return fmt.Sprintf("no alerts set on %s", cmd.ID), nil
+			}
+			it.Alerts, it.WatchedChecks, it.Muted = false, nil, false
+			d.publishLocked()
+			return fmt.Sprintf("alerts cleared for %s", cmd.ID), nil
+		}
+		return "", fmt.Errorf("not watching %s", cmd.ID)
 	case ipc.OpSeen:
 		d.mu.Lock()
 		defer d.mu.Unlock()

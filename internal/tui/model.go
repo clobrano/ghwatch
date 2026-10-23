@@ -396,6 +396,14 @@ func (m *Model) keyNormal(k string) {
 				m.send(ipc.Command{Op: ipc.OpMuteItem, ID: it.ID, On: &on})
 			}
 		}
+	case "c":
+		if it := m.current(); it != nil {
+			if !it.HasAlerts() {
+				m.setFlash("no alerts set on this PR", true)
+			} else {
+				m.confirm("Clear all alerts and job bells of "+ref(*it)+"?", ipc.Command{Op: ipc.OpClearAlerts, ID: it.ID})
+			}
+		}
 	case "N":
 		m.mode, m.evSel = modeEvents, 0
 	case "a":

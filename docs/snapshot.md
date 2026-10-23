@@ -81,4 +81,5 @@ changing the meaning of a field bumps `schema`.
 | `mute` | `on` | global mute |
 | `seen` | `id` | clear the item's unseen mark |
 | `mute_item` | `id`, `on` | mute the item's notifications, keeping them, or restore them |
+| `clear_alerts` | `id` | turn off the item's alerts and job bells, and unmute it |
 | `retest` | `id` | re-trigger failed CI |

@@ -694,6 +694,7 @@ var helpSections = []struct {
 		{"n", "alerts for this PR"},
 		{"b", "alerts for this job"},
 		{"m", "mute / restore this PR's alerts"},
+		{"c", "clear all of this PR's alerts"},
 		{"N", "alert settings, mute all"},
 	}},
 	{"Pull requests", [][2]string{

@@ -500,6 +500,28 @@ func TestMutePR(t *testing.T) {
 	}
 }
 
+func TestClearAlerts(t *testing.T) {
+	m, be := newModel()
+	s := snapshot()
+	s.Items[0].Alerts = false
+	m.SetSnapshot(s)
+	keys(m, "c")
+	if m.mode != modeNormal || !strings.Contains(m.View(90, 16)[15], "no alerts set") {
+		t.Fatalf("c without alerts: mode %v, footer %q", m.mode, m.View(90, 16)[15])
+	}
+
+	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
+	m.SetSnapshot(s)
+	keys(m, "c", "n")
+	if len(be.sent) != 0 {
+		t.Errorf("declined clear was sent: %+v", be.sent)
+	}
+	keys(m, "c", "y")
+	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpClearAlerts || be.sent[0].ID != s.Items[0].ID {
+		t.Errorf("c y sent %+v", be.sent)
+	}
+}
+
 func TestOpenShowsFeedback(t *testing.T) {
 	m, be := newModel()
 	keys(m, kEnter)

@@ -34,6 +34,9 @@ const (
 	// OpMuteItem silences an item's notifications, keeping them to
 	// restore: ID, On.
 	OpMuteItem = "mute_item"
+	// OpClearAlerts removes all of an item's notifications: its alerts,
+	// its jobs' bells and its mute. ID.
+	OpClearAlerts = "clear_alerts"
 	// OpSeen clears an item's unseen mark: ID.
 	OpSeen = "seen"
 )

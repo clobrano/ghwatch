@@ -40,6 +40,7 @@ Notifications are off until you ask for them:
 - `b` on a job: notify about that job only.
 - `m` on a PR: mute all its notifications; `m` again restores them as
   they were.
+- `c` on a PR: clear all its notifications, the PR's and its jobs'.
 - `N`: choose which events notify, or mute everything.
 
 Notifications stay on screen for 30 seconds (`timeout` below), where the

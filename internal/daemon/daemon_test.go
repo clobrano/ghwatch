@@ -453,6 +453,19 @@ func TestMuteItem(t *testing.T) {
 	waitFor(t, c, "muted again", func(s *model.Snapshot) bool { return s.Items[0].Muted })
 	c.Do(ctx, ipc.Command{Op: ipc.OpCheckAlerts, ID: "pr:o/r#1", Check: "unit", On: &on})
 	waitFor(t, c, "bell unmutes", func(s *model.Snapshot) bool { return !s.Items[0].Muted && s.Items[0].Watching("unit") })
+
+	// Clearing removes everything, muted or not.
+	c.Do(ctx, ipc.Command{Op: ipc.OpMuteItem, ID: "pr:o/r#1", On: &on})
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpClearAlerts, ID: "pr:o/r#1"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, c, "cleared", func(s *model.Snapshot) bool {
+		it := s.Items[0]
+		return !it.Alerts && it.WatchedChecks == nil && !it.Muted
+	})
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpClearAlerts, ID: "pr:o/r#9"}); err == nil {
+		t.Error("clearing an unwatched PR should fail")
+	}
 }
 
 func TestIdleExit(t *testing.T) {
