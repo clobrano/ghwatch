@@ -15,9 +15,15 @@ While no daemon runs, nothing is polled, no notifications are sent, and
 
 To get notifications and a live status line with no TUI open, run the
 daemon yourself, in a tmux pane or under a service manager:
-`ghwatch -serve` keeps running until you stop it with Ctrl-C or SIGTERM.
+`ghwatch -serve` keeps running until you stop it with Ctrl-C, SIGTERM or
+`ghwatch stop`.
 Add `-idle-exit 10m` to make it exit after that long without clients. Only
 one daemon runs per user. A second one detects the first and exits.
+
+`ghwatch stop` stops the running daemon, however it was started. It asks
+the socket which process listens on it (`SO_PEERCRED`, Linux only) and
+sends it SIGTERM, so it also stops a daemon from an older build that does
+not know newer commands. Open TUIs reconnect and start a new daemon.
 
 `add` and `rm` go through the daemon when it is running, so every open TUI
 updates at once. Otherwise they edit the watchlist file directly.

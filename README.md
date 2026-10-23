@@ -38,6 +38,9 @@ Notifications are off until you ask for them:
 - `n` on a PR: notify about its checks (failures, all passed, new push,
   merged).
 - `b` on a job: notify about that job only.
+- `m` on a PR: mute all its notifications; `m` again restores them as
+  they were.
+- `c` on a PR: clear all its notifications, the PR's and its jobs'.
 - `N`: choose which events notify, or mute everything.
 
 Notifications stay on screen for 30 seconds (`timeout` below), where the
@@ -87,6 +90,7 @@ ghwatch rm <PR>                        # stop watching it
 ghwatch ls                             # list watched PRs
 ghwatch checks <PR>                    # print a PR's checks, fetched now
 ghwatch status [-json]                 # one-line summary, or the full state
+ghwatch stop                           # stop the daemon, e.g. after a rebuild
 ghwatch icons                          # preview the icon sets
 ```
 
