@@ -89,6 +89,7 @@ ghwatch rm <PR>                        # stop watching it
 ghwatch ls                             # list watched PRs
 ghwatch checks <PR>                    # print a PR's checks, fetched now
 ghwatch status [-json]                 # one-line summary, or the full state
+ghwatch stop                           # stop the daemon, e.g. after a rebuild
 ghwatch icons                          # preview the icon sets
 ```
 

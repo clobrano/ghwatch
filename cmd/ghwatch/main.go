@@ -42,6 +42,7 @@ import (
 const usage = `Usage:
   ghwatch                     open the tabbed TUI
   ghwatch -serve              run the daemon in the foreground
+  ghwatch stop                stop the running daemon
   ghwatch add <PR>...         watch PRs (URL or owner/repo#number)
   ghwatch rm <PR>...          stop watching PRs
   ghwatch ls                  list watched PRs
@@ -107,6 +108,8 @@ func main() {
 		err = cmdStatus(paths, cfg, args, os.Stdout)
 	case "checks":
 		err = cmdChecks(ctx, args, os.Stdout)
+	case "stop":
+		err = cmdStop(paths, os.Stdout)
 	case "icons":
 		cmdIcons(cfg.Icons, iconSet(cfg.Icons, os.Getenv), os.Stdout)
 	case "help":
