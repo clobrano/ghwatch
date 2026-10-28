@@ -43,6 +43,7 @@ changing the meaning of a field bumps `schema`.
     "unseen": true,            // changed since a user last looked at it (omitted when false)
     "labels": [{"name": "lgtm", "color": "0e8a16"}], // GitHub labels (omitted when none)
     "watched_checks": ["e2e"], // jobs with their own notifications (omitted when none)
+    "muted": true,             // alerts and watched_checks silenced, kept to restore (omitted when false)
     "error": "",               // last fetch of this item failed
     "updated_at": "…",
     "checks": [{               // stable order: first seen, first listed
@@ -79,4 +80,6 @@ changing the meaning of a field bumps `schema`.
 | `events` | `events`: `{type: bool}` | enable or disable event types |
 | `mute` | `on` | global mute |
 | `seen` | `id` | clear the item's unseen mark |
+| `mute_item` | `id`, `on` | mute the item's notifications, keeping them, or restore them |
+| `clear_alerts` | `id` | turn off the item's alerts and job bells, and unmute it |
 | `retest` | `id` | re-trigger failed CI |

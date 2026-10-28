@@ -147,6 +147,9 @@ type Item struct {
 	// each of their state changes notifies, even with Alerts off. They are
 	// kept across new pushes, since re-run jobs keep their names.
 	WatchedChecks []string `json:"watched_checks,omitempty"`
+	// Muted silences all of the item's notifications, its Alerts and its
+	// WatchedChecks, while keeping them to restore on unmute.
+	Muted bool `json:"muted,omitempty"`
 	// Unseen is set when the item changed in a way worth a look (its
 	// state, a new push, a merge) and cleared once a user looked at it.
 	Unseen bool    `json:"unseen,omitempty"`
@@ -176,6 +179,10 @@ func Noteworthy(prev *Item, cur Item) bool {
 	}
 	return prev.HeadSHA != cur.HeadSHA || busy(ItemState(*prev)) != busy(ItemState(cur))
 }
+
+// HasAlerts reports whether any notification is set on the item, muted
+// or not: its own alerts or a job's.
+func (it Item) HasAlerts() bool { return it.Alerts || len(it.WatchedChecks) > 0 }
 
 // Watching reports whether the check named name has its own notifications.
 func (it Item) Watching(name string) bool {

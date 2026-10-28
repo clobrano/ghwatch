@@ -392,6 +392,82 @@ func TestJobAlerts(t *testing.T) {
 	waitFor(t, c, "bell off", func(s *model.Snapshot) bool { return len(s.Items[0].WatchedChecks) == 0 })
 }
 
+func TestMuteItem(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	os.WriteFile(paths.Watchlist(), []byte("o/r#1\n"), 0o600)
+	fake := &fakePR{items: map[string]model.Item{}}
+	set := func(unit, e2e model.State) {
+		fake.set(model.Item{ID: "pr:o/r#1", Repo: "o/r", Number: 1, HeadSHA: "a", Lifecycle: model.Open,
+			Checks: []model.Check{check("unit", unit), check("e2e", e2e)}})
+	}
+	set(model.Running, model.Running)
+	rec := &recorder{}
+	_, cancel, done := startDaemon(t, paths, fake, rec)
+	defer func() { cancel(); <-done }()
+	c := dial(t, paths)
+	waitFor(t, c, "first poll", func(s *model.Snapshot) bool { return s.Items[0].HeadSHA == "a" })
+	ctx := context.Background()
+	on, off := true, false
+	poll := func(what string, ok func(*model.Snapshot) bool) {
+		t.Helper()
+		if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpPoll}); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, c, what, ok)
+	}
+
+	// Nothing to mute yet.
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpMuteItem, ID: "pr:o/r#1", On: &on}); err == nil {
+		t.Error("muting a PR without alerts should fail")
+	}
+
+	// Muting keeps the alerts and the bells, and silences them.
+	c.Do(ctx, ipc.Command{Op: ipc.OpAlerts, ID: "pr:o/r#1", On: &on})
+	c.Do(ctx, ipc.Command{Op: ipc.OpCheckAlerts, ID: "pr:o/r#1", Check: "e2e", On: &on})
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpMuteItem, ID: "pr:o/r#1", On: &on}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, c, "muted", func(s *model.Snapshot) bool {
+		it := s.Items[0]
+		return it.Muted && it.Alerts && it.Watching("e2e")
+	})
+	set(model.Failed, model.Passed)
+	poll("results", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Passed })
+	time.Sleep(settle)
+	if n := rec.all(); len(n) != 0 {
+		t.Errorf("muted, but notified: %+v", n)
+	}
+
+	// Unmuting restores them.
+	c.Do(ctx, ipc.Command{Op: ipc.OpMuteItem, ID: "pr:o/r#1", On: &off})
+	waitFor(t, c, "unmuted", func(s *model.Snapshot) bool { return !s.Items[0].Muted && s.Items[0].Alerts })
+	set(model.Failed, model.Failed)
+	poll("e2e failure", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Failed })
+	if n := rec.wait(t, 1); len(n) != 1 || n[0].Event.Check != "e2e" {
+		t.Errorf("unmuted, notifications = %+v", n)
+	}
+
+	// Ringing a bell while muted unmutes, so the new bell works.
+	c.Do(ctx, ipc.Command{Op: ipc.OpMuteItem, ID: "pr:o/r#1", On: &on})
+	waitFor(t, c, "muted again", func(s *model.Snapshot) bool { return s.Items[0].Muted })
+	c.Do(ctx, ipc.Command{Op: ipc.OpCheckAlerts, ID: "pr:o/r#1", Check: "unit", On: &on})
+	waitFor(t, c, "bell unmutes", func(s *model.Snapshot) bool { return !s.Items[0].Muted && s.Items[0].Watching("unit") })
+
+	// Clearing removes everything, muted or not.
+	c.Do(ctx, ipc.Command{Op: ipc.OpMuteItem, ID: "pr:o/r#1", On: &on})
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpClearAlerts, ID: "pr:o/r#1"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, c, "cleared", func(s *model.Snapshot) bool {
+		it := s.Items[0]
+		return !it.Alerts && it.WatchedChecks == nil && !it.Muted
+	})
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpClearAlerts, ID: "pr:o/r#9"}); err == nil {
+		t.Error("clearing an unwatched PR should fail")
+	}
+}
+
 func TestIdleExit(t *testing.T) {
 	paths := testPaths(t)
 	paths.Ensure()

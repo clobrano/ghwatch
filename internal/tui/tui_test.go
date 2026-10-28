@@ -462,6 +462,66 @@ func TestJobBell(t *testing.T) {
 	}
 }
 
+func TestMutePR(t *testing.T) {
+	m, be := newModel()
+	s := snapshot()
+	s.Items[0].Alerts = false
+	m.SetSnapshot(s)
+	keys(m, "m")
+	if len(be.sent) != 0 || !strings.Contains(m.View(90, 16)[15], "no alerts to mute") {
+		t.Fatalf("m without alerts sent %+v, footer %q", be.sent, m.View(90, 16)[15])
+	}
+
+	s = snapshot()
+	s.Items[0].Alerts = true
+	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
+	m.SetSnapshot(s)
+	keys(m, "m")
+	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpMuteItem || be.sent[0].ID != s.Items[0].ID || !*be.sent[0].On {
+		t.Fatalf("m sent %+v", be.sent)
+	}
+
+	// Muted, the PR keeps its alerts and bells, and says so.
+	s.Items[0].Muted = true
+	m.SetSnapshot(s)
+	rows := m.View(90, 16)
+	if !strings.Contains(rows[4], bellIcon+" muted (m restores)") || strings.Contains(rows[4], "alerts on") {
+		t.Errorf("header = %q", rows[4])
+	}
+	if !strings.Contains(rows[1], "#123 lease-race "+bellIcon) {
+		t.Errorf("tab = %q", rows[1])
+	}
+	if strings.Contains(rows[0], bellIcon) {
+		t.Errorf("title bar counts a muted PR: %q", rows[0])
+	}
+	keys(m, "m")
+	if *be.sent[1].On {
+		t.Errorf("second m should restore: %+v", be.sent[1])
+	}
+}
+
+func TestClearAlerts(t *testing.T) {
+	m, be := newModel()
+	s := snapshot()
+	s.Items[0].Alerts = false
+	m.SetSnapshot(s)
+	keys(m, "c")
+	if m.mode != modeNormal || !strings.Contains(m.View(90, 16)[15], "no alerts set") {
+		t.Fatalf("c without alerts: mode %v, footer %q", m.mode, m.View(90, 16)[15])
+	}
+
+	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
+	m.SetSnapshot(s)
+	keys(m, "c", "n")
+	if len(be.sent) != 0 {
+		t.Errorf("declined clear was sent: %+v", be.sent)
+	}
+	keys(m, "c", "y")
+	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpClearAlerts || be.sent[0].ID != s.Items[0].ID {
+		t.Errorf("c y sent %+v", be.sent)
+	}
+}
+
 func TestOpenShowsFeedback(t *testing.T) {
 	m, be := newModel()
 	keys(m, kEnter)
