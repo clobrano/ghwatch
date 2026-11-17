@@ -68,7 +68,7 @@ func (p Paths) Ensure() error {
 
 // DefaultStatusTemplate renders e.g. "PR ●3 ✓5 ✗1", with the icons of the
 // configured set.
-const DefaultStatusTemplate = `PR {{if .Running}}{{icon "running"}}{{.Running}} {{end}}{{if .Passed}}{{icon "passed"}}{{.Passed}} {{end}}{{if .Queued}}{{icon "queued"}}{{.Queued}} {{end}}{{if .Failed}}{{icon "failed"}}{{.Failed}} {{end}}{{if .Unseen}}•{{.Unseen}} {{end}}{{if .Stale}}!{{end}}`
+const DefaultStatusTemplate = `PR {{if .Running}}{{icon "running"}}{{.Running}} {{end}}{{if .Passed}}{{icon "passed"}}{{.Passed}} {{end}}{{if .Queued}}{{icon "queued"}}{{.Queued}} {{end}}{{if .Failed}}{{icon "failed"}}{{.Failed}} {{end}}{{if .Unseen}}•{{.Unseen}} {{end}}{{if .Comments}}{{icon "comment"}}{{.Comments}} {{end}}{{if .Stale}}!{{end}}`
 
 // Config is the content of config.toml.
 type Config struct {
@@ -91,6 +91,21 @@ type Config struct {
 	// Icons is the icon set: "fancy" (Unicode symbols, the default) or
 	// "safe" (characters every common monospace font has).
 	Icons string
+	// IgnoreAuthors are GitHub logins, lower case, whose comments are
+	// never new and never notify.
+	IgnoreAuthors []string
+}
+
+// Ignores reports whether comments by login are ignored. A "[bot]"
+// suffix is ignored on both sides, since GitHub shows bots both ways.
+func (c Config) Ignores(login string) bool {
+	login = strings.TrimSuffix(strings.ToLower(login), "[bot]")
+	for _, a := range c.IgnoreAuthors {
+		if strings.TrimSuffix(a, "[bot]") == login {
+			return true
+		}
+	}
+	return false
 }
 
 // Default returns the built-in configuration.
@@ -160,6 +175,15 @@ func Load(path string) (Config, error) {
 			if err == nil && cfg.Icons != "fancy" && cfg.Icons != "safe" {
 				err = fmt.Errorf("want \"fancy\" or \"safe\"")
 			}
+		case "ignore_authors", "comments.ignore_authors":
+			list, ok := v.([]string)
+			if !ok {
+				err = fmt.Errorf("want a list of logins, e.g. [\"some-bot\"]")
+			}
+			cfg.IgnoreAuthors = nil
+			for _, a := range list {
+				cfg.IgnoreAuthors = append(cfg.IgnoreAuthors, strings.ToLower(strings.TrimSpace(a)))
+			}
 		case "autostart", "daemon.autostart":
 			b, ok := v.(bool)
 			if !ok {
@@ -185,7 +209,8 @@ func asString(v any) (string, error) {
 }
 
 // parseTOML reads the subset of TOML ghwatch needs: comments, [tables]
-// (flattened as "table.key"), and string, integer and boolean values.
+// (flattened as "table.key"), and string, integer and boolean values, and
+// one-line lists of strings.
 func parseTOML(f *os.File) (map[string]any, error) {
 	out := map[string]any{}
 	table := ""
@@ -234,6 +259,9 @@ func stripComment(s string) string {
 }
 
 func parseValue(s string) (any, error) {
+	if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
+		return parseList(s[1 : len(s)-1])
+	}
 	switch {
 	case s == "true":
 		return true, nil
@@ -249,4 +277,42 @@ func parseValue(s string) (any, error) {
 		return nil, fmt.Errorf("unsupported value %q", s)
 	}
 	return i, nil
+}
+
+// parseList parses the inside of a one-line list of strings.
+func parseList(s string) ([]string, error) {
+	out := []string{}
+	for s = strings.TrimSpace(s); s != ""; s = strings.TrimSpace(s) {
+		var end int
+		switch s[0] {
+		case '"':
+			end = 1
+			for end < len(s) && s[end] != '"' {
+				if s[end] == '\\' {
+					end++
+				}
+				end++
+			}
+		case '\'':
+			end = strings.IndexByte(s[1:], '\'') + 1
+		default:
+			return nil, fmt.Errorf("unsupported list item %q: want quoted strings", s)
+		}
+		if end <= 0 || end >= len(s) {
+			return nil, fmt.Errorf("unterminated string in list")
+		}
+		v, err := parseValue(s[:end+1])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v.(string))
+		s = strings.TrimSpace(s[end+1:])
+		if s != "" {
+			if s[0] != ',' {
+				return nil, fmt.Errorf("want a comma between list items")
+			}
+			s = s[1:]
+		}
+	}
+	return out, nil
 }

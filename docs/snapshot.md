@@ -16,7 +16,7 @@ changing the meaning of a field bumps `schema`.
     "mute": false,             // global mute; per-item alerts are kept
     "events": {                // event types that notify, for items with alerts on
       "check_failed": true, "all_passed": true, "check_started": true,
-      "ci_restarted": true, "item_finished": true
+      "ci_restarted": true, "item_finished": true, "comment": true
     }
   },
   "items": [{                  // watchlist order
@@ -43,7 +43,28 @@ changing the meaning of a field bumps `schema`.
     "unseen": true,            // changed since a user last looked at it (omitted when false)
     "labels": [{"name": "lgtm", "color": "0e8a16"}], // GitHub labels (omitted when none)
     "watched_checks": ["e2e"], // jobs with their own notifications (omitted when none)
-    "muted": true,             // alerts and watched_checks silenced, kept to restore (omitted when false)
+    "watched_threads": ["conversation"], // comment threads with their own notifications, by id (omitted when none)
+    "muted": true,             // alerts, watched_checks and watched_threads silenced, kept to restore (omitted when false)
+    "comments_read_at": "…",   // comments newer than this are new; set at the first fetch (omitted before)
+    "threads": [{              // the conversation, then review threads in GitHub's order
+      "id": "conversation",    // "conversation", or GitHub's review thread ID
+      "path": "pkg/foo.go",    // review threads only
+      "line": 42,              // review threads only, when known
+      "resolved": false,       // omitted when false
+      "outdated": false,       // omitted when false
+      "total": 12,             // comments in the thread
+      "url": "https://…",
+      "comments": [{           // the latest ones, oldest first
+        "id": "IC_…",
+        "author": "alice",
+        "body": "Shouldn't this…", // first line, at most 200 characters
+        "created_at": "…",
+        "url": "https://…",
+        "review": "approved",  // review summaries: approved | changes_requested | commented | dismissed
+        "mine": true,          // written by the user ghwatch runs as (omitted when false)
+        "ignored": true        // author in ignore_authors (omitted when false)
+      }]
+    }],
     "error": "",               // last fetch of this item failed
     "updated_at": "…",
     "checks": [{               // stable order: first seen, first listed
@@ -81,5 +102,7 @@ changing the meaning of a field bumps `schema`.
 | `mute` | `on` | global mute |
 | `seen` | `id` | clear the item's unseen mark |
 | `mute_item` | `id`, `on` | mute the item's notifications, keeping them, or restore them |
-| `clear_alerts` | `id` | turn off the item's alerts and job bells, and unmute it |
+| `clear_alerts` | `id` | turn off the item's alerts, job and thread bells, and unmute it |
+| `thread_alerts` | `id`, `thread`, `on` | notifications for one comment thread, by id |
+| `comments_read` | `id` | mark the item's comments read, up to its latest |
 | `retest` | `id` | re-trigger failed CI |

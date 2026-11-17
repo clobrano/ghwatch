@@ -290,8 +290,10 @@ func cmdList(paths config.Paths, w io.Writer) error {
 // StatusData is the data available to the status template.
 type StatusData struct {
 	Running, Pending, Passed, Failed, Queued, Merged, Closed, Total, Unseen int
-	Stale                                                                   bool
-	Items                                                                   []model.Item
+	// Comments counts the new comments of all PRs.
+	Comments int
+	Stale    bool
+	Items    []model.Item
 }
 
 func cmdStatus(paths config.Paths, cfg config.Config, args []string, w io.Writer) error {
@@ -314,7 +316,12 @@ func cmdStatus(paths config.Paths, cfg config.Config, args []string, w io.Writer
 		tmpl = *format
 	}
 	t, err := template.New("status").Funcs(template.FuncMap{
-		"icon": func(state string) string { return model.State(state).Icon() },
+		"icon": func(name string) string {
+			if name == "comment" {
+				return model.CommentIcon()
+			}
+			return model.State(name).Icon()
+		},
 	}).Parse(tmpl)
 	if err != nil {
 		return fmt.Errorf("status template: %w", err)
@@ -344,6 +351,7 @@ func summarize(snap *model.Snapshot) StatusData {
 		if it.Unseen {
 			d.Unseen++
 		}
+		d.Comments += it.NewComments()
 		switch model.ItemState(it) {
 		case model.Running:
 			d.Running++

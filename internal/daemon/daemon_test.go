@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -108,9 +109,14 @@ func check(name string, s model.State) model.Check {
 
 func startDaemon(t *testing.T, paths config.Paths, k kind.Kind, n notify.Notifier) (*Daemon, context.CancelFunc, chan error) {
 	t.Helper()
+	return startDaemonWith(t, paths, config.Config{Interval: time.Hour}, k, n)
+}
+
+func startDaemonWith(t *testing.T, paths config.Paths, cfg config.Config, k kind.Kind, n notify.Notifier) (*Daemon, context.CancelFunc, chan error) {
+	t.Helper()
 	d := &Daemon{
 		Paths:      paths,
-		Config:     config.Config{Interval: time.Hour},
+		Config:     cfg,
 		Kinds:      kind.NewRegistry(k),
 		Notifier:   n,
 		Log:        log.New(io.Discard, "", 0),
@@ -581,4 +587,96 @@ func TestUnseen(t *testing.T) {
 	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpSeen, ID: "pr:o/r#9"}); err == nil {
 		t.Error("seen on an unknown PR succeeded")
 	}
+}
+
+func TestComments(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	os.WriteFile(paths.Watchlist(), []byte("o/r#1\n"), 0o600)
+	fake := &fakePR{items: map[string]model.Item{}}
+	base := time.Now().UTC() // comments after the first poll are new
+	comment := func(id, author string, min int) model.Comment {
+		return model.Comment{ID: id, Author: author, Body: "text of " + id, CreatedAt: base.Add(time.Duration(min) * time.Minute), URL: "u/" + id}
+	}
+	var conv, thread []model.Comment
+	set := func() {
+		fake.set(model.Item{ID: "pr:o/r#1", Repo: "o/r", Number: 1, HeadSHA: "a", Lifecycle: model.Open, URL: "https://pr",
+			Checks: []model.Check{check("unit", model.Running)},
+			Threads: []model.Thread{
+				{ID: model.ConversationID, Total: len(conv), Comments: slices.Clone(conv)},
+				{ID: "T1", Path: "a.go", Line: 3, Total: len(thread), Comments: slices.Clone(thread)},
+			}})
+	}
+	conv = []model.Comment{comment("c1", "alice", -60)}
+	set()
+	rec := &recorder{}
+	cfg := config.Config{Interval: time.Hour, IgnoreAuthors: []string{"ci-robot"}}
+	_, cancel, done := startDaemonWith(t, paths, cfg, fake, rec)
+	defer func() { cancel(); <-done }()
+	c := dial(t, paths)
+	ctx := context.Background()
+	on := true
+	poll := func(what string, ok func(*model.Snapshot) bool) {
+		t.Helper()
+		if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpPoll}); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, c, what, ok)
+	}
+
+	// The comments there when the PR is first fetched are read.
+	if s := waitFor(t, c, "first poll", func(s *model.Snapshot) bool { return len(s.Items[0].Threads) == 2 }); s.Items[0].NewComments() != 0 || s.Items[0].CommentsReadAt.IsZero() {
+		t.Fatalf("after the first poll: %d new, read at %v", s.Items[0].NewComments(), s.Items[0].CommentsReadAt)
+	}
+
+	// With PR alerts on, a new comment notifies; the user's own and an
+	// ignored author's neither notify nor count.
+	c.Do(ctx, ipc.Command{Op: ipc.OpAlerts, ID: "pr:o/r#1", On: &on})
+	mine := comment("c3", "me", 3)
+	mine.Mine = true
+	conv = append(conv, comment("c2", "alice", 2), mine, comment("c4", "CI-Robot", 4))
+	set()
+	var s *model.Snapshot
+	poll("new comments", func(x *model.Snapshot) bool { s = x; return len(x.Items[0].Threads[0].Comments) == 4 })
+	notes := rec.wait(t, 1)
+	if len(notes) != 1 || notes[0].Title != "alice commented" || notes[0].URL != "u/c2" {
+		t.Fatalf("notifications = %+v", notes)
+	}
+	if n := s.Items[0].NewComments(); n != 1 || !s.Items[0].Threads[0].Comments[3].Ignored {
+		t.Errorf("%d new comments, ignored flag %v", n, s.Items[0].Threads[0].Comments[3].Ignored)
+	}
+
+	// With PR alerts off, only a thread with a bell notifies.
+	off := false
+	c.Do(ctx, ipc.Command{Op: ipc.OpAlerts, ID: "pr:o/r#1", On: &off})
+	if _, err := c.Do(ctx, ipc.Command{Op: ipc.OpThreadAlerts, ID: "pr:o/r#1", Thread: "T1", On: &on}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, c, "thread bell", func(s *model.Snapshot) bool { return s.Items[0].WatchingThread("T1") && !s.Items[0].Alerts })
+	conv = append(conv, comment("c5", "alice", 5))
+	thread = append(thread, comment("r1", "bob", 6))
+	set()
+	poll("reply", func(s *model.Snapshot) bool { return len(s.Items[0].Threads[1].Comments) == 1 })
+	notes = rec.wait(t, 2)
+	if len(notes) != 2 || notes[1].Title != "bob commented on a.go:3" || !strings.Contains(notes[1].Body, "text of r1") {
+		t.Fatalf("notifications = %+v", notes)
+	}
+
+	// Several at once make one notification.
+	thread = append(thread, comment("r2", "carol", 7), comment("r3", "bob", 8))
+	set()
+	poll("more replies", func(x *model.Snapshot) bool { s = x; return len(x.Items[0].Threads[1].Comments) == 3 })
+	notes = rec.wait(t, 3)
+	if len(notes) != 3 || notes[2].Title != "2 new comments from carol, bob" || notes[2].URL != "https://pr" {
+		t.Fatalf("notifications = %+v", notes)
+	}
+
+	// Reading clears the count; clearing alerts drops the thread bell.
+	if n := s.Items[0].NewComments(); n != 5 {
+		t.Errorf("before reading, %d new, want 5", n)
+	}
+	c.Do(ctx, ipc.Command{Op: ipc.OpCommentsRead, ID: "pr:o/r#1"})
+	waitFor(t, c, "read", func(s *model.Snapshot) bool { return s.Items[0].NewComments() == 0 })
+	c.Do(ctx, ipc.Command{Op: ipc.OpClearAlerts, ID: "pr:o/r#1"})
+	waitFor(t, c, "cleared", func(s *model.Snapshot) bool { return s.Items[0].WatchedThreads == nil })
 }

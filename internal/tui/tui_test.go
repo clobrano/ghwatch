@@ -762,10 +762,17 @@ func TestFooterHints(t *testing.T) {
 	m, _ := newModel()
 	// Wide: every hint, in order, saying what each key does.
 	wide := m.View(220, 16)[15]
-	want := "h/l prev/next PR · j/k next/prev job · enter open job · o open PR · y/Y copy PR/job link · n alert PR · b alert job · N alert settings · / find job · ? all keys"
+	want := "h/l prev/next PR · j/k next/prev job · v comments · enter open job · o open PR · y/Y copy PR/job link · n alert PR · b alert job · N alert settings · / find job · ? all keys"
 	if !strings.Contains(wide, want) {
 		t.Errorf("wide footer = %q", wide)
 	}
+	// The comments list names its own rows.
+	keys(m, "v")
+	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
+	if wide := m.View(240, 16)[15]; !strings.Contains(wide, want) {
+		t.Errorf("wide footer, comments = %q", wide)
+	}
+	keys(m, "v")
 	// 80 columns: the least important hints give way, the line fits beside
 	// the connection status, and "? all keys" stays.
 	narrow := m.View(80, 16)[15]
@@ -776,11 +783,11 @@ func TestFooterHints(t *testing.T) {
 		t.Errorf("80-column footer keeps a low-priority hint or cuts one: %q", narrow)
 	}
 	// Very narrow: only "? all keys" is left.
-	if got := hintLine(14).plain(); got != "  ? all keys" {
+	if got := hintLine(14, viewChecks).plain(); got != "  ? all keys" {
 		t.Errorf("tiny footer = %q", got)
 	}
 	// Keys stand out in the accent.
-	if l := hintLine(200); l[1].style != sBold+sAccent || l[1].text != "h/l" {
+	if l := hintLine(200, viewChecks); l[1].style != sBold+sAccent || l[1].text != "h/l" {
 		t.Errorf("key style = %+v", l[1])
 	}
 }
@@ -817,5 +824,99 @@ func TestUnseenMarks(t *testing.T) {
 	keys(m, "j")
 	if len(be.sent) != 2 || be.sent[1].Op != ipc.OpSeen {
 		t.Errorf("sent %+v, want a second seen", be.sent)
+	}
+}
+
+// withComments gives #123 comments read 30 minutes ago: two new ones (in
+// the conversation and on a.go:3), an older open thread and a resolved one.
+func withComments(s *model.Snapshot) *model.Snapshot {
+	c := func(id, author string, ago time.Duration) model.Comment {
+		return model.Comment{ID: id, Author: author, Body: "about " + id, CreatedAt: now.Add(-ago), URL: "u/" + id}
+	}
+	it := &s.Items[0]
+	it.CommentsReadAt = now.Add(-30 * time.Minute)
+	it.Threads = []model.Thread{
+		{ID: model.ConversationID, Total: 9, Comments: []model.Comment{c("c1", "bob", time.Hour), c("c2", "ci-robot", 5*time.Minute)}},
+		{ID: "T1", Path: "a.go", Line: 3, Total: 2, Comments: []model.Comment{c("r1", "me", 2*time.Hour), c("r2", "alice", 10*time.Minute)}},
+		{ID: "T2", Path: "b.go", Line: 7, Resolved: true, Total: 1, Comments: []model.Comment{c("s1", "alice", 3*time.Hour)}},
+		{ID: "T3", Path: "c.go", Line: 1, Outdated: true, Total: 1, Comments: []model.Comment{c("x1", "carol", 2*time.Hour)}},
+	}
+	return s
+}
+
+func TestCommentsList(t *testing.T) {
+	m, be := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	rows := m.View(100, 20)
+	if !strings.Contains(rows[0], commentMark()+" 2") || !strings.Contains(rows[1], "#123 lease-race "+bellIcon+" "+commentMark()+" 2") {
+		t.Errorf("title = %q, tabs = %q", rows[0], rows[1])
+	}
+	if !strings.Contains(rows[4], "alerts on · 2 unresolved threads") || !strings.Contains(rows[5], "Comments 2 new") {
+		t.Errorf("header = %q", rows[4])
+	}
+
+	keys(m, "v")
+	rows = m.View(100, 20)
+	if !strings.Contains(strings.Join(rows, "\n"), "[Comments 2 new]") {
+		t.Errorf("list title missing:\n%s", strings.Join(rows, "\n"))
+	}
+	want := []string{" New · 2", "›• conversation 1 new  about c2", " • a.go:3 1 new  about r2", " Open · 1", " c c.go:1 (outdated) · 1", " Resolved · 1", " √ b.go:7 · 1"}
+	body := listRows(rows)
+	for i, prefix := range want {
+		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
+			t.Errorf("row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
+		}
+	}
+	if !strings.Contains(body[1], "5m ago  ci-robot") {
+		t.Errorf("row 1 = %q", body[1])
+	}
+
+	// The key press marked the comments read, once.
+	var reads int
+	for _, c := range be.sent {
+		if c.Op == ipc.OpCommentsRead && c.ID == "pr:org/repo#123" {
+			reads++
+		}
+	}
+	if reads != 1 {
+		t.Errorf("comments_read sent %d times: %+v", reads, be.sent)
+	}
+
+	// Keys act on the selected thread.
+	keys(m, "j", kEnter, "Y", "b")
+	if be.opened[0] != "u/r2" || be.copied[0] != "u/r2" {
+		t.Errorf("opened %v, copied %v", be.opened, be.copied)
+	}
+	last := be.sent[len(be.sent)-1]
+	if last.Op != ipc.OpThreadAlerts || last.Thread != "T1" || !*last.On {
+		t.Errorf("b sent %+v", last)
+	}
+
+	// Once the daemon has them read, they stay new for this visit...
+	s := withComments(snapshot())
+	s.Items[0].CommentsReadAt = now
+	s.Items[0].WatchedThreads = []string{"T1"}
+	m.SetSnapshot(s)
+	if body := listRows(m.View(100, 20)); !strings.HasPrefix(body[0], " New · 2") || !strings.Contains(body[2], "a.go:3 "+bellIcon) {
+		t.Errorf("same visit:\n%s", strings.Join(body, "\n"))
+	}
+	if rows := m.View(100, 20); strings.Contains(rows[0], commentMark()+" 2") || strings.Contains(rows[1], commentMark()+" 2") {
+		t.Errorf("read comments still counted: %q / %q", rows[0], rows[1])
+	}
+	// ...and not on the next one.
+	keys(m, "l", "h")
+	body = listRows(m.View(100, 20))
+	if !strings.HasPrefix(body[0], " Open · 3") || !strings.HasPrefix(body[1], "›c a.go:3 "+bellIcon+" · 2") || !strings.HasPrefix(body[2], " c conversation · 9") {
+		t.Errorf("next visit:\n%s", strings.Join(body, "\n"))
+	}
+
+	// Find searches thread names, authors and text.
+	keys(m, "/", "c", "a", "r", "o", "l", kEnter)
+	if _, th := m.selectedThread(); th == nil || th.ID != "T3" {
+		t.Errorf("find selected %+v", th)
+	}
+	keys(m, "v")
+	if !strings.HasPrefix(listRows(m.View(100, 20))[0], " Failed · 1") {
+		t.Error("v did not switch back to checks")
 	}
 }

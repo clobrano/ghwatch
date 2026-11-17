@@ -70,8 +70,19 @@ type Model struct {
 	// when its tab was opened: they lead their groups. Toggling a bell
 	// does not move a job under the cursor; the order catches up the next
 	// time the tab is opened.
-	pinnedID string
-	pinned   map[string]bool
+	pinnedID      string
+	pinned        map[string]bool
+	pinnedThreads map[string]bool
+	// shownReadAt is the comments' read mark when the tab pinnedID was
+	// opened: newer comments show as new for the whole visit.
+	shownReadAt time.Time
+
+	// view is the list shown: viewChecks or viewComments.
+	view int
+	csel map[string]selection // selected comment thread per item
+	// readSent holds, per item, the latest comment this client already
+	// marked read, so it asks the daemon once per change.
+	readSent map[string]time.Time
 
 	// seenSent holds the items this client already marked seen, so it asks
 	// the daemon once per change.
@@ -80,7 +91,7 @@ type Model struct {
 
 // NewModel returns an empty model.
 func NewModel(b Backend) *Model {
-	return &Model{backend: b, now: time.Now, sel: map[string]selection{}, top: map[string]int{}, Color: true}
+	return &Model{backend: b, now: time.Now, sel: map[string]selection{}, csel: map[string]selection{}, top: map[string]int{}, Color: true}
 }
 
 // markSeen tells the daemon the user looked at the active PR: any key
@@ -225,12 +236,7 @@ func grouped(checks []model.Check, pinned map[string]bool) []model.Check {
 // pinnedChecks returns the checks leading their groups for it: its belled
 // checks, taken when its tab was opened and kept while it stays open.
 func (m *Model) pinnedChecks(it *model.Item) map[string]bool {
-	if m.pinnedID != it.ID {
-		m.pinnedID, m.pinned = it.ID, map[string]bool{}
-		for _, name := range it.WatchedChecks {
-			m.pinned[name] = true
-		}
-	}
+	m.visit(it)
 	return m.pinned
 }
 
@@ -288,6 +294,15 @@ func (m *Model) moveCheck(delta int) {
 	m.sel[it.ID] = selection{key: checks[i].Key(), idx: i}
 }
 
+// move moves the selection in the list shown.
+func (m *Model) move(delta int) {
+	if m.view == viewComments {
+		m.moveThread(delta)
+	} else {
+		m.moveCheck(delta)
+	}
+}
+
 func (m *Model) send(cmd ipc.Command) {
 	if !m.connected {
 		m.setFlash("disconnected from the daemon; try again when connected", true)
@@ -298,6 +313,7 @@ func (m *Model) send(cmd ipc.Command) {
 
 // Key handles one key press.
 func (m *Model) Key(k string) {
+	defer m.markRead()
 	defer m.markSeen()
 	switch m.mode {
 	case modeAdd:
@@ -332,7 +348,7 @@ func (m *Model) keyNormal(k string) {
 		case "T":
 			m.setActive((m.activeIdx - 1 + len(m.items())) % max(len(m.items()), 1))
 		case "g":
-			m.moveCheck(-1 << 20)
+			m.move(-1 << 20)
 		}
 		return
 	}
@@ -348,19 +364,25 @@ func (m *Model) keyNormal(k string) {
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		m.setActive(int(k[0] - '1'))
 	case "j", kDown:
-		m.moveCheck(1)
+		m.move(1)
 	case "k", kUp:
-		m.moveCheck(-1)
+		m.move(-1)
 	case kPgDown:
-		m.moveCheck(10)
+		m.move(10)
 	case kPgUp:
-		m.moveCheck(-10)
+		m.move(-10)
 	case "G", kEnd:
-		m.moveCheck(1 << 20)
+		m.move(1 << 20)
 	case kHome:
-		m.moveCheck(-1 << 20)
+		m.move(-1 << 20)
+	case "v":
+		m.view = 1 - m.view
 	case kEnter:
-		if _, c := m.selected(); c != nil {
+		if m.view == viewComments {
+			if _, t := m.selectedThread(); t != nil {
+				m.open(t.Link())
+			}
+		} else if _, c := m.selected(); c != nil {
 			m.open(c.URL)
 		}
 	case "o":
@@ -372,7 +394,11 @@ func (m *Model) keyNormal(k string) {
 			m.copy(it.URL)
 		}
 	case "Y":
-		if _, c := m.selected(); c != nil {
+		if m.view == viewComments {
+			if _, t := m.selectedThread(); t != nil {
+				m.copy(t.Link())
+			}
+		} else if _, c := m.selected(); c != nil {
 			m.copy(c.URL)
 		}
 	case "n":
@@ -381,7 +407,12 @@ func (m *Model) keyNormal(k string) {
 			m.send(ipc.Command{Op: ipc.OpAlerts, ID: it.ID, On: &on})
 		}
 	case "b":
-		if it, c := m.selected(); c != nil && c.State == model.Queued {
+		if m.view == viewComments {
+			if it, t := m.selectedThread(); t != nil {
+				on := !it.WatchingThread(t.ID)
+				m.send(ipc.Command{Op: ipc.OpThreadAlerts, ID: it.ID, Thread: t.ID, On: &on})
+			}
+		} else if it, c := m.selected(); c != nil && c.State == model.Queued {
 			m.setFlash("the merge queue has no bell of its own; n covers the merge", true)
 		} else if c != nil {
 			on := !it.Watching(c.Name)
@@ -401,7 +432,7 @@ func (m *Model) keyNormal(k string) {
 			if !it.HasAlerts() {
 				m.setFlash("no alerts set on this PR", true)
 			} else {
-				m.confirm("Clear all alerts and job bells of "+ref(*it)+"?", ipc.Command{Op: ipc.OpClearAlerts, ID: it.ID})
+				m.confirm("Clear all alerts and bells of "+ref(*it)+"?", ipc.Command{Op: ipc.OpClearAlerts, ID: it.ID})
 			}
 		}
 	case "N":
@@ -499,6 +530,14 @@ func (m *Model) keyFind(k string) {
 	before := string(m.input)
 	m.keyInput(k, func(string) {
 		it := m.current()
+		if m.view == viewComments {
+			ts, matches := m.findThreads()
+			if it != nil && len(matches) > 0 {
+				i := matches[min(m.findSel, len(matches)-1)]
+				m.csel[it.ID] = selection{key: ts[i].ID, idx: i}
+			}
+			return
+		}
 		checks, matches := m.findMatches()
 		if it == nil || len(matches) == 0 {
 			return

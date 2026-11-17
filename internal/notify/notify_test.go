@@ -79,3 +79,19 @@ func TestDesktopExpiry(t *testing.T) {
 		t.Errorf("urgent notification should not stick: %q", calls[1])
 	}
 }
+
+func TestFormatComments(t *testing.T) {
+	it := model.Item{Repo: "o/r", Number: 7, Title: "fix", URL: "https://pr"}
+	review := &model.Comment{Author: "bob", Body: "changes requested", Review: "changes_requested", URL: "u/r"}
+	n := FormatComments([]model.Transition{{Type: model.EventComment, Thread: model.ConversationID, Where: "conversation", Comment: review}}, it)
+	if n.Title != "bob changes requested" || n.Body != "changes requested\no/r#7 fix" || n.URL != "u/r" {
+		t.Errorf("review: %+v", n)
+	}
+	var ts []model.Transition
+	for _, a := range []string{"a", "b", "a", "c", "d"} {
+		ts = append(ts, model.Transition{Type: model.EventComment, Thread: "T", Where: "x.go:1", Comment: &model.Comment{Author: a}})
+	}
+	if n := FormatComments(ts, it); n.Title != "5 new comments from a, b, c, …" || n.URL != "https://pr" {
+		t.Errorf("several: %+v", n)
+	}
+}
