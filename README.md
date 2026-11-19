@@ -21,9 +21,9 @@ The keys you need day to day:
 | Key | Action |
 | --- | --- |
 | `h` / `l` | previous / next PR |
-| `j` / `k` | next / previous job |
-| `v` | switch between the PR's checks and its comments |
-| `enter` | open the selected job, or comment, in the browser |
+| `j` / `k` | next / previous thread or job |
+| `v` | switch between the PR's comments and its checks |
+| `enter` | open the selected comment, or job, in the browser |
 | `o` | open the PR in the browser |
 | `a` / `d` | add / remove a PR |
 | `?` | all the other keys |
@@ -38,8 +38,8 @@ Notifications are off until you ask for them:
 
 - `n` on a PR: notify about its checks (failures, all passed, new push,
   merged) and new comments.
-- `b` on a job: notify about that job only. On a comment thread (press
-  `v` to see them): notify about new comments in it.
+- `b` on a comment thread: notify about new comments in it. On a job
+  (press `v` to see the checks): notify about that job only.
 - `m` on a PR: mute all its notifications; `m` again restores them as
   they were.
 - `c` on a PR: clear all its notifications, the PR's, its jobs' and its
@@ -53,8 +53,8 @@ desktop allows it (GNOME ignores it and uses its own, shorter timing). They need
 Even without notifications, nothing goes unnoticed: a PR whose state
 changed since you last looked gets an orange `•` on its tab, and the
 title bar counts them (`•2 new`). New comments, in the conversation or on
-code, get a comment mark with their count on the tab, and press `v` to
-list them. Both clear when you go to that tab.
+code, get a comment mark with their count on the tab, and are listed
+first. Both clear when you go to that tab.
 
 ## More
 

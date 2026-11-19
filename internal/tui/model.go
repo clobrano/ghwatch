@@ -94,7 +94,8 @@ type Model struct {
 
 // NewModel returns an empty model.
 func NewModel(b Backend) *Model {
-	return &Model{backend: b, now: time.Now, sel: map[string]selection{}, csel: map[string]selection{}, top: map[string]int{}, Color: true}
+	// The comments list comes first, as in the list title.
+	return &Model{backend: b, now: time.Now, sel: map[string]selection{}, csel: map[string]selection{}, top: map[string]int{}, Color: true, view: viewComments}
 }
 
 // markSeen tells the daemon the user looked at the active PR: any key

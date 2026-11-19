@@ -26,7 +26,7 @@ bottom:
 - **List:** each PR has two lists, its comments and its jobs, and `v`
   switches between them. The box's top border names both, comments
   first, with the one shown highlighted and the number of new comments
-  (`Comments 3 new`). A PR opens on its jobs.
+  (`Comments 3 new`). ghwatch opens on the comments.
 - **Job list:** a Check / Time / Source header and the selected job
   highlighted. Jobs are split into groups, each under a
   header with its count: **Failed**, then **Running** (including

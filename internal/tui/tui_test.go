@@ -49,6 +49,7 @@ func snapshot() *model.Snapshot {
 func newModel() (*Model, *fakeBackend) {
 	be := &fakeBackend{}
 	m := NewModel(be)
+	m.view = viewChecks // most tests are about the checks list
 	m.now = func() time.Time { return now }
 	m.Color = false
 	m.SetConnected(true)
@@ -983,5 +984,17 @@ func TestWrap(t *testing.T) {
 	want := []string{"one two", "three four", "", "  indented", "  words", "  here", "abcdefghij", "klmnop"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("wrap = %q", got)
+	}
+}
+
+func TestOpensOnComments(t *testing.T) {
+	m := NewModel(&fakeBackend{})
+	m.now = func() time.Time { return now }
+	m.Color = false
+	m.SetConnected(true)
+	m.SetSnapshot(withComments(snapshot()))
+	rows := m.View(100, 20)
+	if !strings.Contains(rows[5], "[Comments 2 new]") || !strings.HasPrefix(listRows(rows)[0], " New · 2") {
+		t.Errorf("first screen:\n%s", strings.Join(rows, "\n"))
 	}
 }
