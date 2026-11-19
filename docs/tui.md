@@ -22,8 +22,10 @@ it. From top to bottom:
   it got a new push, or it was merged or closed. Pressing any key while
   on its tab clears the mark, in every open TUI. A comment mark and a
   count show the PR's new comments; they clear the same way.
-- **PR header:** reference, title and author, then head commit, push
-  time, progress, failures and unresolved review threads. The PR's
+- **PR header:** the PR's state first, as a chip like GitHub's (`OPEN`
+  green, `MERGED` mauve, `CLOSED` red), then reference, title and author;
+  below, head commit, push time, progress, failures and unresolved
+  review threads. The PR's
   labels follow on a `labels:` line, each name in bold in its GitHub
   color, lightened just enough to read on the background when GitHub's
   color is too dark (darkened with the light flavor).

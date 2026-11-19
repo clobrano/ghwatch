@@ -326,7 +326,11 @@ func (m *Model) header(w int) []line {
 	if it == nil {
 		return []line{{{" Nothing watched yet", sBold}}, {{" press a to add a PR, or run: ghwatch add <PR URL>", sSecondary}}}
 	}
-	title := line{{" " + ref(*it), sBold + sAccent}, {"  " + it.Title, sBold + sStrong}}
+	title := line{{" ", ""}}
+	if it.HeadSHA != "" { // known once fetched
+		title = append(title, m.lifecycleChip(it.Lifecycle), seg{" ", ""})
+	}
+	title = append(title, seg{ref(*it), sBold + sAccent}, seg{"  " + it.Title, sBold + sStrong})
 	l1 := spread(title, line{{"@" + it.Author + " ", sSecondary}}, w)
 	if it.Author == "" {
 		l1 = title
@@ -356,9 +360,6 @@ func (m *Model) header(w int) []line {
 		add(seg{fmt.Sprintf("%d/%d done", done, len(it.Checks)), sMuted})
 		if failed > 0 {
 			add(seg{fmt.Sprintf("%d failing", failed), sRed})
-		}
-		if it.Lifecycle.Finished() {
-			add(seg{string(it.Lifecycle), stateStyle(model.ItemState(*it)) + sBold})
 		}
 
 	}
@@ -395,6 +396,22 @@ func (m *Model) header(w int) []line {
 		out = append(out, labelLine(it.Labels))
 	}
 	return out
+}
+
+// lifecycleChip is the PR's state, as on GitHub's PR page: OPEN on green,
+// MERGED on mauve, CLOSED on red; bracketed without colors.
+func (m *Model) lifecycleChip(l model.Lifecycle) seg {
+	name, color := "OPEN", bgGreen
+	switch l {
+	case model.LifeMerged:
+		name, color = "MERGED", bgMagenta
+	case model.LifeClosed:
+		name, color = "CLOSED", bgRed
+	}
+	if !m.Color {
+		return seg{"[" + name + "]", ""}
+	}
+	return seg{" " + name + " ", color + sBold + sOnAccent}
 }
 
 // queueSeg describes a merge queue entry, e.g. "queued for merge, 2nd in

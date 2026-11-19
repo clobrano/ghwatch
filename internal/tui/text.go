@@ -41,6 +41,9 @@ var (
 	bgSelect  string // selected row
 	bgSoft    string // selected row in panels
 	bgOverlay string // help and settings panels
+	bgGreen   string // open PR chip
+	bgMagenta string // merged PR chip
+	bgRed     string // closed PR chip
 )
 
 // fg and bg return 24-bit color escapes for a hex color.

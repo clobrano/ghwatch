@@ -1035,3 +1035,32 @@ func TestThemes(t *testing.T) {
 		t.Errorf("mocha: %v %q", err, sText)
 	}
 }
+
+func TestLifecycleChip(t *testing.T) {
+	m, _ := newModel()
+	rows := m.View(100, 16)
+	if !strings.HasPrefix(rows[3], " [OPEN] org/repo#123  Fix lease renewal race") {
+		t.Errorf("open header = %q", rows[3])
+	}
+	keys(m, "3")
+	rows = m.View(100, 16)
+	if !strings.HasPrefix(rows[3], " [MERGED] osac/osac#58  Docs") || strings.Contains(rows[4], "merged") {
+		t.Errorf("merged header = %q / %q", rows[3], rows[4])
+	}
+	// Not fetched yet: no state to show.
+	s := snapshot()
+	s.Items[2].HeadSHA = ""
+	m.SetSnapshot(s)
+	if rows := m.View(100, 16); strings.Contains(rows[3], "[") {
+		t.Errorf("unfetched header = %q", rows[3])
+	}
+	// The chips' text (the base color) reads well on them.
+	for _, name := range []string{"frappe", "macchiato", "mocha"} {
+		f := themes[name]
+		for _, c := range []string{f.green, f.mauve, f.red} {
+			if r := contrast(f.base, c); r < 4.5 {
+				t.Errorf("%s chip %s: contrast %.1f", name, c, r)
+			}
+		}
+	}
+}

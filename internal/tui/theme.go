@@ -76,6 +76,7 @@ func UseTheme(name string) error {
 	sBlue, sMagenta, sNew = fg(f.sapphire), fg(f.mauve), fg(f.peach)
 	sOnAccent = fg(f.base)
 	bgAccent, bgSelect, bgSoft, bgOverlay = bg(f.blue), bg(f.surface1), bg(f.surface0), bg(f.mantle)
+	bgGreen, bgMagenta, bgRed = bg(f.green), bg(f.mauve), bg(f.red)
 	return nil
 }
 
