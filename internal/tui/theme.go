@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -41,6 +42,9 @@ var themes = map[string]flavor{
 	},
 }
 
+// theme is the flavor in use.
+var theme flavor
+
 // DefaultTheme is the flavor used when config.toml names none.
 const DefaultTheme = "frappe"
 
@@ -61,6 +65,7 @@ func UseTheme(name string) error {
 	if !ok {
 		return fmt.Errorf("unknown theme %q (want %s)", name, strings.Join(ThemeNames(), ", "))
 	}
+	theme = f
 	// Content (text, details, counts, states) uses colors readable on the
 	// flavor's base; Overlay 1 and Surface 2 are for decoration only.
 	sText, sStrong = fg(f.text), fg(f.text)
@@ -78,4 +83,61 @@ func init() {
 	if err := UseTheme(DefaultTheme); err != nil {
 		panic(err)
 	}
+}
+
+// minContrast is the contrast colored text keeps on the background:
+// WCAG's 4.5:1 for normal text.
+const minContrast = 4.5
+
+func validHex(hex string) bool {
+	var r, g, b int
+	n, err := fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b)
+	return err == nil && n == 3 && len(hex) == 6
+}
+
+func parseHex(hex string) [3]float64 {
+	var c [3]int
+	fmt.Sscanf(hex, "%02x%02x%02x", &c[0], &c[1], &c[2])
+	return [3]float64{float64(c[0]), float64(c[1]), float64(c[2])}
+}
+
+// luminance is a color's WCAG relative luminance.
+func luminance(c [3]float64) float64 {
+	var l float64
+	for i, w := range []float64{0.2126, 0.7152, 0.0722} {
+		v := c[i] / 255
+		if v <= 0.03928 {
+			v /= 12.92
+		} else {
+			v = math.Pow((v+0.055)/1.055, 2.4)
+		}
+		l += w * v
+	}
+	return l
+}
+
+// contrast is the WCAG contrast ratio of two hex colors.
+func contrast(a, b string) float64 {
+	la, lb := luminance(parseHex(a)), luminance(parseHex(b))
+	return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+}
+
+// readable returns hex, mixed with white on a dark background (black on
+// a light one) in small steps until it reaches minContrast on bg.
+func readable(hex, bg string) string {
+	target := 255.0
+	if luminance(parseHex(bg)) > 0.5 {
+		target = 0
+	}
+	c := parseHex(hex)
+	out := hex
+	for step := 0; step <= 20 && contrast(out, bg) < minContrast; step++ {
+		k := float64(step) / 20
+		var m [3]int
+		for i := range c {
+			m[i] = int(math.Round(c[i] + (target-c[i])*k))
+		}
+		out = fmt.Sprintf("%02x%02x%02x", m[0], m[1], m[2])
+	}
+	return out
 }

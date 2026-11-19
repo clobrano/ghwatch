@@ -24,7 +24,9 @@ it. From top to bottom:
   count show the PR's new comments; they clear the same way.
 - **PR header:** reference, title and author, then head commit, push
   time, progress, failures and unresolved review threads. The PR's
-  labels show below as chips in their GitHub colors.
+  labels follow on a `labels:` line, each name in bold in its GitHub
+  color, lightened just enough to read on the background when GitHub's
+  color is too dark (darkened with the light flavor).
 - **List:** each PR has two lists, its comments and its jobs, and `v`
   switches between them. The box's top border names both, comments
   first, with the one shown highlighted and the number of new comments

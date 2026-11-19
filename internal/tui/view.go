@@ -456,30 +456,25 @@ func ordinal(n int) string {
 	return strconv.Itoa(n) + suffix
 }
 
-// labelLine shows labels as chips in their GitHub colors.
+// labelLine lists the labels, each in bold in its GitHub color.
 func labelLine(labels []model.Label) line {
-	l := line{{" ", ""}}
+	l := line{{" labels: ", sSecondary}}
 	for i, lb := range labels {
 		if i > 0 {
-			l = append(l, seg{" ", ""})
+			l = append(l, seg{" · ", sDim})
 		}
-		l = append(l, seg{" " + lb.Name + " ", labelStyle(lb.Color)})
+		l = append(l, seg{lb.Name, labelStyle(lb.Color)})
 	}
 	return l
 }
 
-// labelStyle is a 24-bit background in the label's color, with black or
-// white text, whichever reads better on it.
+// labelStyle is bold text in the label's color, made lighter (or darker
+// on a light theme) just enough to read on the theme's background.
 func labelStyle(hex string) string {
-	var r, g, b int
-	if _, err := fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b); err != nil || len(hex) != 6 {
-		return sReverse
+	if !validHex(hex) {
+		return sBold + sText
 	}
-	fg := "38;2;255;255;255"
-	if r*299+g*587+b*114 > 150*1000 {
-		fg = "38;2;0;0;0"
-	}
-	return fmt.Sprintf("\x1b[48;2;%d;%d;%d;%sm", r, g, b, fg)
+	return sBold + fg(readable(hex, theme.base))
 }
 
 // plural is "1 job" or "2 jobs".

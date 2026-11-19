@@ -2,8 +2,6 @@ package tui
 
 import (
 	"errors"
-	"fmt"
-	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -669,7 +667,7 @@ func TestLabels(t *testing.T) {
 	s.Items[0].Labels = []model.Label{{Name: "lgtm", Color: "0e8a16"}, {Name: "do-not-merge/hold", Color: "fbca04"}}
 	m.SetSnapshot(s)
 	rows := m.View(90, 16)
-	if rows[5] != "  lgtm   do-not-merge/hold " {
+	if rows[5] != " labels: lgtm · do-not-merge/hold" {
 		t.Errorf("label row = %q", rows[5])
 	}
 	if !strings.HasPrefix(rows[6], "┌") || !strings.HasPrefix(listRows(rows)[0], " Failed · 1") {
@@ -681,15 +679,27 @@ func TestLabels(t *testing.T) {
 		t.Errorf("row 5 without labels = %q", rows[5])
 	}
 
-	// Text is black on light colors, white on dark ones; bad colors fall back.
-	if got := labelStyle("fbca04"); got != "\x1b[48;2;251;202;4;38;2;0;0;0m" {
+	// Labels are bold in their color: kept when readable, lightened just
+	// enough when not (darkened on the light flavor); bad colors fall back.
+	defer UseTheme(DefaultTheme)
+	if got := labelStyle("fbca04"); got != sBold+fg("fbca04") {
 		t.Errorf("yellow = %q", got)
 	}
-	if got := labelStyle("b60205"); got != "\x1b[48;2;182;2;5;38;2;255;255;255m" {
-		t.Errorf("red = %q", got)
+	for _, name := range ThemeNames() {
+		UseTheme(name)
+		for _, c := range []string{"0e8a16", "000000", "b60205", "ffffff", "1d76db"} {
+			out := readable(c, theme.base)
+			if r := contrast(out, theme.base); r < minContrast {
+				t.Errorf("%s: %s became %s, contrast %.1f", name, c, out, r)
+			}
+		}
+	}
+	UseTheme("frappe")
+	if out := readable("0e8a16", theme.base); out == "0e8a16" || !strings.HasPrefix(labelStyle("0e8a16"), sBold) {
+		t.Errorf("dark green kept as is on frappe: %s", out)
 	}
 	for _, bad := range []string{"", "xyz", "12345", "1234567"} {
-		if got := labelStyle(bad); got != sReverse {
+		if got := labelStyle(bad); got != sBold+sText {
 			t.Errorf("labelStyle(%q) = %q", bad, got)
 		}
 	}
@@ -1024,25 +1034,4 @@ func TestThemes(t *testing.T) {
 	if err := UseTheme("mocha"); err != nil || sText != fg("cdd6f4") || bgSelect != bg("45475a") {
 		t.Errorf("mocha: %v %q", err, sText)
 	}
-}
-
-// contrast is the WCAG contrast ratio of two hex colors.
-func contrast(a, b string) float64 {
-	lum := func(hex string) float64 {
-		var rgb [3]int
-		fmt.Sscanf(hex, "%02x%02x%02x", &rgb[0], &rgb[1], &rgb[2])
-		var l float64
-		for i, w := range []float64{0.2126, 0.7152, 0.0722} {
-			c := float64(rgb[i]) / 255
-			if c <= 0.03928 {
-				c /= 12.92
-			} else {
-				c = math.Pow((c+0.055)/1.055, 2.4)
-			}
-			l += w * c
-		}
-		return l
-	}
-	la, lb := lum(a), lum(b)
-	return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
 }
