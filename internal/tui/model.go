@@ -86,6 +86,10 @@ type Model struct {
 	// drafts holds replies not posted yet, by item ID, NUL, thread ID: a
 	// declined or failed reply reopens with its text.
 	drafts map[string]string
+	// cscroll is how far the selected comment, cscrollKey, is scrolled
+	// with J/K, in lines.
+	cscroll    int
+	cscrollKey string
 	// expanded holds the threads (item ID, NUL, thread ID) showing all
 	// their comments.
 	expanded map[string]bool
@@ -397,6 +401,14 @@ func (m *Model) keyNormal(k string) {
 		m.move(-1 << 20)
 	case "v":
 		m.view = 1 - m.view
+	case "J", "K":
+		if m.view == viewComments {
+			if k == "J" {
+				m.scrollComment(1)
+			} else {
+				m.scrollComment(-1)
+			}
+		}
 	case "e":
 		if m.view == viewComments {
 			m.toggleThread()

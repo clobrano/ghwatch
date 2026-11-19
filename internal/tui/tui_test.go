@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -795,8 +796,8 @@ func TestFooterHints(t *testing.T) {
 	}
 	// The comments list names its own rows.
 	keys(m, "v")
-	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · e expand · r reply · R resolve · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
-	if wide := m.View(260, 16)[15]; !strings.Contains(wide, want) {
+	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · e expand · r reply · R resolve · J/K scroll comment · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
+	if wide := m.View(280, 16)[15]; !strings.Contains(wide, want) {
 		t.Errorf("wide footer, comments = %q", wide)
 	}
 	keys(m, "v")
@@ -1163,5 +1164,57 @@ func TestResolve(t *testing.T) {
 	keys(m, "v", "R")
 	if m.confirmMsg != "Re-run the failed CI of org/repo#123?" {
 		t.Errorf("R in the checks list: %q", m.confirmMsg)
+	}
+}
+
+func TestScrollComment(t *testing.T) {
+	m, _ := newModel()
+	s := withComments(snapshot())
+	var long []string
+	for i := 1; i <= 30; i++ {
+		long = append(long, fmt.Sprintf("line %d", i))
+	}
+	s.Items[0].Threads[1].Comments[0].Body = strings.Join(long, "\n") // r1, by me
+	m.SetSnapshot(s)
+	keys(m, "v", "j", "e", "j") // a.go:3 expanded, its first comment selected
+	view := func() []string { return listRows(m.View(100, 20)) }
+	body := view()
+	n := len(body)
+	if !strings.HasPrefix(body[n-1], "   │     ↓ ") || !strings.HasSuffix(strings.TrimRight(body[n-1], " "), "more lines · J") {
+		t.Fatalf("no more-lines marker:\n%s", strings.Join(body, "\n"))
+	}
+
+	// J scrolls the comment; the lines above give way to a marker.
+	keys(m, "J", "J", "J")
+	body = view()
+	if !strings.HasPrefix(body[0], "   │     ↑ 3 lines above · K") || !strings.HasPrefix(body[1], "   │     line 3") {
+		t.Errorf("after 3 J:\n%s", strings.Join(body, "\n"))
+	}
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r1" {
+		t.Errorf("J moved the selection to %+v", c)
+	}
+	// Scrolling stops at the end of the comment.
+	for i := 0; i < 50; i++ {
+		keys(m, "J")
+	}
+	body = view()
+	joined := strings.Join(body, "\n")
+	if !strings.Contains(joined, "line 30") || strings.Contains(joined, "more line") {
+		t.Errorf("at the end:\n%s", joined)
+	}
+	keys(m, "K")
+	// The marker covers a line too: two are hidden below.
+	if !strings.Contains(strings.Join(view(), "\n"), "2 more lines · J") {
+		t.Errorf("after K:\n%s", strings.Join(view(), "\n"))
+	}
+	// j jumps to the next comment, which starts unscrolled.
+	keys(m, "j")
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" || m.cscroll != 0 {
+		t.Errorf("j selected %+v, scroll %d", c, m.cscroll)
+	}
+	// J on a thread row, or in the checks list, does nothing.
+	keys(m, "g", "g", "J")
+	if m.cscroll != 0 {
+		t.Errorf("J on a thread scrolled to %d", m.cscroll)
 	}
 }

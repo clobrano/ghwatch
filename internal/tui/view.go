@@ -553,11 +553,12 @@ func (m *Model) checksBody(w, rows int) []line {
 		groups[i] = checkGroup(c.State)
 	}
 	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sSecondary}
-	return m.groupedRows(it.ID, groups, sel, 0, -1, rows,
+	out, _, _ := m.groupedRows(it.ID, groups, sel, 0, -1, rows,
 		func(g, n int) line {
 			return line{{" " + groupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sSecondary}}
 		},
 		func(i int) []line { return []line{m.checkRow(it, checks[i], i == sel, w, anyRequired)} })
+	return out
 }
 
 // groupedRows lays out a list whose entries are sorted by group: a header
@@ -566,8 +567,9 @@ func (m *Model) checksBody(w, rows int) []line {
 // group). An entry is its row and, when expanded, lines below it. Lines
 // from to to (-1: the last) of the selected entry are kept in view, as
 // far as they fit, from the first. topKey keeps the scroll position of
-// this list between frames.
-func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int, header func(group, count int) line, entry func(i int) []line) []line {
+// this list between frames. first and last are the rows those lines
+// land on, which may be outside the rows returned.
+func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int, header func(group, count int) line, entry func(i int) []line) (out []line, first, last int) {
 	type row struct {
 		entry int // index of the entry, or -1 for a group header
 		line  int // line of the entry
@@ -604,12 +606,12 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int
 		}
 	}
 	top := m.top[topKey]
-	first := selRow
-	if first > 0 && list[first-1].entry < 0 && list[first].line == 0 {
-		first--
+	start := selRow
+	if start > 0 && list[start-1].entry < 0 && list[start].line == 0 {
+		start--
 	}
-	if first < top {
-		top = first
+	if start < top {
+		top = start
 	}
 	if selEnd >= top+rows {
 		top = min(selEnd-rows+1, selRow)
@@ -617,7 +619,6 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int
 	top = max(min(top, len(list)-rows), 0)
 	m.top[topKey] = top
 
-	var out []line
 	for _, r := range list[top:] {
 		if len(out) >= rows {
 			break
@@ -628,7 +629,7 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int
 		}
 		out = append(out, lines[r.entry][r.line])
 	}
-	return out
+	return out, selRow - top, selEnd - top
 }
 
 // Job list columns: marker, icon, name, time, source, "opt".
@@ -795,6 +796,7 @@ var helpSections = []struct {
 	}},
 	{"Comments", [][2]string{
 		{"e", "expand / fold a thread"},
+		{"J / K", "scroll a long comment"},
 		{"r", "reply (on the conversation: comment)"},
 		{"R", "resolve / unresolve a thread"},
 	}},
@@ -938,6 +940,7 @@ var footerHints = []struct {
 	{"e", "", "expand", 11}, // comments only
 	{"r", "", "reply", 12},
 	{"R", "", "resolve", 13},
+	{"J/K", "", "scroll comment", 14},
 	{"o", "open PR", "", 2},
 	{"y/Y", "copy PR/job link", "copy PR/comment link", 9},
 	{"n", "alert PR", "", 6},

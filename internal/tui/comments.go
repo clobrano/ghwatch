@@ -221,6 +221,7 @@ func (m *Model) moveThread(delta int) {
 	}
 	i = min(max(i+delta, 0), len(ps)-1)
 	m.csel[it.ID] = selection{key: posKey(ts, ps[i]), idx: i}
+	m.cscroll = 0 // the next comment starts at its top
 }
 
 // markRead tells the daemon the user saw the active PR's comments: any
@@ -273,12 +274,21 @@ func (m *Model) commentsBody(w, rows int) []line {
 		}
 		return m.commentLines(ts[i], w, readAt, sel)
 	}
+	// A selected comment taller than the list scrolls with J/K: the
+	// lines above the scroll position give way to a marker saying so.
+	scroll, height := 0, 0
 	if p.comment >= 0 {
 		_, spans := expand(p.thread)
 		from, to = 1+spans[p.comment][0], 1+spans[p.comment][1]
+		height = to - from + 1
+		scroll = min(m.commentScroll(posKey(ts, p)), max(height-rows+1, 0))
+		m.cscroll = scroll
+		if scroll > 0 {
+			from += scroll - 1
+		}
 	}
 	groupStyle := [...]string{sNew, sAccent, sSecondary}
-	return m.groupedRows("c\x00"+it.ID, groups, p.thread, from, to, rows,
+	out, first, last := m.groupedRows("c\x00"+it.ID, groups, p.thread, from, to, rows,
 		func(g, n int) line {
 			return line{{" " + threadGroupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sSecondary}}
 		},
@@ -286,6 +296,38 @@ func (m *Model) commentsBody(w, rows int) []line {
 			lines, _ := expand(i)
 			return append([]line{m.threadRow(it, ts[i], i == p.thread && p.comment < 0, w, readAt)}, lines...)
 		})
+	if p.comment >= 0 && len(out) > 0 {
+		mark := func(text string) line {
+			return line{{"   │", sBorder}, {"     " + text, sSecondary}}
+		}
+		if scroll > 0 && first >= 0 && first < len(out) {
+			out[first] = mark("↑ " + plural(scroll, "line") + " above · K")
+		}
+		if last >= len(out) {
+			out[len(out)-1] = mark("↓ " + plural(last-len(out)+2, "more line") + " · J")
+		}
+	}
+	return out
+}
+
+// commentScroll is how many lines of the selected comment are scrolled
+// past: 0 once another row is selected.
+func (m *Model) commentScroll(key string) int {
+	if m.cscrollKey != key {
+		m.cscrollKey, m.cscroll = key, 0
+	}
+	return m.cscroll
+}
+
+// scrollComment scrolls the selected comment by delta lines; the list
+// clamps it to the comment's length when drawn.
+func (m *Model) scrollComment(delta int) {
+	_, t, c := m.selectedComment()
+	if c == nil {
+		return
+	}
+	m.commentScroll(t.ID + "\x00" + c.ID)
+	m.cscroll = max(m.cscroll+delta, 0)
 }
 
 // Comment list columns: marker, icon, thread, time, author.

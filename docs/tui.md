@@ -79,6 +79,7 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `1`–`9` | jump to tab N |
 | `v` | switch between the checks and the comments |
 | `e` | expand the selected comment thread to all its comments, or fold it |
+| `J` / `K` | (comments) scroll the selected comment when it is taller than the list |
 | `r` | (comments) reply in the selected thread; on the conversation, comment on the PR |
 | `R` | (comments) resolve or unresolve the selected thread; (checks) re-run failed CI |
 | `/` | find a job, or a thread by file, author or text (ignores case); `enter` selects it |
@@ -136,8 +137,9 @@ ghwatch fetches the last 20 overview comments and reviews, and the last
 50 review threads with their last 5 comments each, keeping up to 4,000
 characters of each comment. Counts of new comments are within those, and
 an expanded thread says how many earlier comments are only on GitHub:
-`enter` opens the thread there. The list shows as much of a long comment
-as fits the screen; `enter` opens the rest.
+`enter` opens the thread there. A comment taller than the list is cut
+with a `↓ 14 more lines · J` line: `J` and `K` scroll it a line at a
+time, `j` and `k` still jump to the next or previous comment.
 
 ## Merge queue
 
