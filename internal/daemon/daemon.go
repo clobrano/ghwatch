@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -670,6 +671,8 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 		return "mute " + onOff(*cmd.On), nil
 	case ipc.OpRetest:
 		return d.retest(ctx, cmd.ID)
+	case ipc.OpReply, ipc.OpResolve:
+		return d.discuss(ctx, cmd)
 	}
 	return "", fmt.Errorf("unknown command %q", cmd.Op)
 }
@@ -779,6 +782,55 @@ func (d *Daemon) retest(ctx context.Context, id string) (string, error) {
 	}
 	return info, err
 }
+
+// discuss replies in a comment thread, or resolves one, then polls so
+// the change shows.
+func (d *Daemon) discuss(ctx context.Context, cmd ipc.Command) (string, error) {
+	if cmd.Thread == "" || cmd.Op == ipc.OpReply && strings.TrimSpace(cmd.Body) == "" || cmd.Op == ipc.OpResolve && cmd.On == nil {
+		return "", fmt.Errorf("%s: missing thread, body or on", cmd.Op)
+	}
+	d.mu.Lock()
+	it := d.snap.Find(cmd.ID)
+	var item model.Item
+	where := cmd.Thread
+	if it != nil {
+		item = *it
+		for _, t := range it.Threads {
+			if t.ID == cmd.Thread {
+				where = t.Name()
+			}
+		}
+	}
+	d.mu.Unlock()
+	if it == nil {
+		return "", fmt.Errorf("not watching %s", cmd.ID)
+	}
+	k, ok := d.Kinds.Of(cmd.ID).(kind.Discusser)
+	if !ok {
+		return "", fmt.Errorf("%s items have no comment threads", item.Kind)
+	}
+	var err error
+	var info string
+	switch {
+	case cmd.Op == ipc.OpReply:
+		err = k.Reply(ctx, d.GH, item, cmd.Thread, cmd.Body)
+		info = "replied on " + where
+		if cmd.Thread == model.ConversationID {
+			info = "commented on " + ref(item)
+		}
+	case *cmd.On:
+		err, info = k.Resolve(ctx, d.GH, item, cmd.Thread, true), "resolved "+where
+	default:
+		err, info = k.Resolve(ctx, d.GH, item, cmd.Thread, false), "unresolved "+where
+	}
+	if err != nil {
+		return "", err
+	}
+	d.RequestPoll()
+	return info, nil
+}
+
+func ref(it model.Item) string { return fmt.Sprintf("%s#%d", it.Repo, it.Number) }
 
 // unmuteOnChange unmutes an item when an alert is turned on, so the new
 // alert works at once, or when its last alert is turned off, leaving

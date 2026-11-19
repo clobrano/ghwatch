@@ -24,9 +24,10 @@ The keys you need day to day:
 | `j` / `k` | next / previous thread or job |
 | `v` | switch between the PR's comments and its checks |
 | `enter` | open the selected comment, or job, in the browser |
+| `r` / `R` | reply in a comment thread / resolve it |
 | `o` | open the PR in the browser |
 | `a` / `d` | add / remove a PR |
-| `?` | all the other keys |
+| `?` | all the other keys, and (`tab`) what the icons mean |
 | `q` | quit |
 
 The footer always shows the main keys. [docs/tui.md](docs/tui.md) describes

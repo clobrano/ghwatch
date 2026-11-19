@@ -3,10 +3,13 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -28,6 +31,7 @@ type (
 	snapMsg   *model.Snapshot
 	connMsg   bool
 	resultMsg struct {
+		cmd  ipc.Command
 		info string
 		err  error
 	}
@@ -42,6 +46,9 @@ type backend struct {
 	opts   Options
 	events chan<- any
 	tty    *os.File
+	// suspend hands the terminal over (to an editor) and returns the
+	// function that takes it back; nil when that is not possible.
+	suspend func() (resume func())
 
 	mu     sync.Mutex
 	client *ipc.Client
@@ -59,13 +66,13 @@ func (b *backend) Send(cmd ipc.Command) {
 	b.mu.Unlock()
 	go func() {
 		if c == nil {
-			b.events <- resultMsg{err: ipc.ErrClosed}
+			b.events <- resultMsg{cmd: cmd, err: ipc.ErrClosed}
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		info, err := c.Do(ctx, cmd)
-		b.events <- resultMsg{info, err}
+		b.events <- resultMsg{cmd, info, err}
 	}()
 }
 
@@ -81,6 +88,48 @@ func (b *backend) Open(url string) error {
 }
 
 func (b *backend) Copy(text string) error { return browser.Copy(text, b.tty) }
+
+// Edit runs the user's editor ($VISUAL, $EDITOR, else vi) on text in a
+// temporary file, with the terminal handed over, and returns the file's
+// content once the editor exits.
+func (b *backend) Edit(text string) (string, error) {
+	if b.suspend == nil {
+		return text, errors.New("cannot open an editor: no controlling terminal")
+	}
+	f, err := os.CreateTemp("", "ghwatch-reply-*.md")
+	if err != nil {
+		return text, err
+	}
+	defer os.Remove(f.Name())
+	_, err = f.WriteString(text)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return text, err
+	}
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+	// Through the shell, as git does, so EDITOR may carry arguments.
+	cmd := exec.Command("sh", "-c", editor+` "$1"`, "ghwatch-editor", f.Name())
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	resume := b.suspend()
+	err = cmd.Run()
+	resume()
+	if err != nil {
+		return text, fmt.Errorf("editor %s: %w", editor, err)
+	}
+	data, err := os.ReadFile(f.Name())
+	if err != nil {
+		return text, err
+	}
+	return string(data), nil
+}
 
 // Run shows the TUI until the user quits.
 func Run(ctx context.Context, opts Options) error {
@@ -111,7 +160,9 @@ func Run(ctx context.Context, opts Options) error {
 		m.SetSnapshot(snap)
 	}
 
-	go readKeys(in, events)
+	keys := newKeyReader(in)
+	be.suspend = keys.suspender(fd, out, state)
+	go keys.run(events)
 	go connect(ctx, opts, be, events)
 	sigs := make(chan os.Signal, 4)
 	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
@@ -168,7 +219,7 @@ func Run(ctx context.Context, opts Options) error {
 			case connMsg:
 				m.SetConnected(bool(ev))
 			case resultMsg:
-				m.Result(ev.info, ev.err)
+				m.Done(ev.cmd, ev.info, ev.err)
 			case quitMsg:
 				return nil
 			}
@@ -177,16 +228,79 @@ func Run(ctx context.Context, opts Options) error {
 	return nil
 }
 
-func readKeys(in *os.File, events chan<- any) {
+// keyReader reads keys from the terminal and can pause, so an editor
+// gets the keyboard to itself. It reads /dev/tty, which supports read
+// deadlines: a deadline in the past interrupts a blocked read.
+type keyReader struct {
+	f        *os.File
+	pausable bool
+	paused   atomic.Bool
+	parked   chan struct{}
+	wake     chan struct{}
+}
+
+func newKeyReader(stdin *os.File) *keyReader {
+	r := &keyReader{f: stdin, parked: make(chan struct{}), wake: make(chan struct{})}
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0); err == nil {
+		if tty.SetReadDeadline(time.Time{}) == nil {
+			r.f, r.pausable = tty, true
+		} else {
+			tty.Close()
+		}
+	}
+	return r
+}
+
+func (r *keyReader) run(events chan<- any) {
 	buf := make([]byte, 256)
 	for {
-		n, err := in.Read(buf)
-		if err != nil {
+		n, err := r.f.Read(buf)
+		if n > 0 && !r.paused.Load() {
+			for _, k := range parseKeys(buf[:n]) {
+				events <- keyMsg(k)
+			}
+		}
+		switch {
+		case err == nil:
+		case errors.Is(err, os.ErrDeadlineExceeded) && r.paused.Load():
+			r.parked <- struct{}{}
+			<-r.wake
+			r.f.SetReadDeadline(time.Time{})
+		default:
 			events <- quitMsg{}
 			return
 		}
-		for _, k := range parseKeys(buf[:n]) {
-			events <- keyMsg(k)
+	}
+}
+
+// pause stops reading keys; it returns once the reader is parked.
+func (r *keyReader) pause() {
+	r.paused.Store(true)
+	r.f.SetReadDeadline(time.Now())
+	<-r.parked
+}
+
+func (r *keyReader) resume() {
+	r.paused.Store(false)
+	r.wake <- struct{}{}
+}
+
+// suspender returns the backend's suspend: it parks the key reader and
+// gives the terminal back in its normal mode (cooked, as it was before
+// the TUI started), then undoes both. It is nil when keys cannot be
+// paused.
+func (r *keyReader) suspender(fd int, out *os.File, cooked *termState) func() func() {
+	if !r.pausable {
+		return nil
+	}
+	return func() func() {
+		r.pause()
+		out.WriteString("\x1b[?25h\x1b[?1049l")
+		restore(fd, cooked)
+		return func() {
+			makeRaw(fd)
+			out.WriteString("\x1b[?1049h\x1b[?25l\x1b[2J")
+			r.resume()
 		}
 	}
 }

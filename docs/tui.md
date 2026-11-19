@@ -64,7 +64,10 @@ it. From top to bottom:
   `? all keys` always stays. Messages replace the hints for a few
   seconds.
 
-`?` opens the full list of keys in a panel, grouped by topic, and `N`
+`?` opens the full list of keys in a panel, grouped by topic; `tab`
+switches it to the legend, which shows every state icon and mark and
+what it means (a tab's icon is the state of the PR's required checks,
+or of all checks when none is required). `N`
 opens the notification settings the same way.
 
 Links open where GitHub's PR page points: a GitHub Actions job opens its
@@ -79,6 +82,9 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `1`–`9` | jump to tab N |
 | `v` | switch between the checks and the comments |
 | `e` | expand the selected comment thread to all its comments, or fold it |
+| `J` / `K` | (comments) scroll the selected comment when it is taller than the list |
+| `r` | (comments) reply in the selected thread; on the conversation, comment on the PR |
+| `R` | (comments) resolve or unresolve the selected thread; (checks) re-run failed CI |
 | `/` | find a job, or a thread by file, author or text (ignores case); `enter` selects it |
 | `j` / `k`, `gg` / `G` | move between jobs, threads, or the comments of an expanded thread |
 | `enter` | open the selected job's page, or the selected comment (a thread's latest) |
@@ -92,9 +98,8 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `N` | notification settings: event types and global mute |
 | `a` | add a PR |
 | `d` | unwatch the current PR (in every client) |
-| `r` | ask the daemon to poll now |
-| `R` | re-run failed CI: comment `/retest` for Prow, re-run failed Actions jobs |
-| `?` | all keys (`?` or `esc` closes it) |
+| `p` | ask the daemon to poll now |
+| `?` | all keys; `tab` there shows the legend of icons and marks (`?` or `esc` closes it) |
 | `q` | quit this TUI (the daemon keeps running) |
 
 ## Comments
@@ -113,12 +118,31 @@ long as "new comment" is enabled in `N`. Several comments found in one
 poll make a single notification. `m` and `c` mute and clear thread bells
 together with the rest.
 
+## Replying and resolving
+
+`r` on a thread opens your editor (`$VISUAL`, else `$EDITOR`, else `vi`)
+on an empty file, like `git commit`. Write the reply in markdown, save and
+quit; ghwatch asks before posting it (`Reply on pkg/foo.go:42 (3
+lines)?`). An empty file posts nothing. On the conversation row the reply
+is a new comment on the PR; on a code thread it is a reply in that
+thread, like GitHub's Reply button. If you decline, or posting fails, the
+text is kept: `r` again reopens it. The reply shows in the list after the
+poll that follows, and, being yours, it is never new.
+
+`R` on a code thread resolves it, or unresolves a resolved one, after a
+confirmation. The conversation cannot be resolved. In the checks list,
+`R` re-runs failed CI: it comments `/retest` for Prow and re-runs failed
+Actions jobs.
+
+Both post as your `gh` login (or `$GITHUB_TOKEN`), through the daemon.
+
 ghwatch fetches the last 20 overview comments and reviews, and the last
 50 review threads with their last 5 comments each, keeping up to 4,000
 characters of each comment. Counts of new comments are within those, and
 an expanded thread says how many earlier comments are only on GitHub:
-`enter` opens the thread there. The list shows as much of a long comment
-as fits the screen; `enter` opens the rest.
+`enter` opens the thread there. A comment taller than the list is cut
+with a `↓ 14 more lines · J` line: `J` and `K` scroll it a line at a
+time, `j` and `k` still jump to the next or previous comment.
 
 ## Merge queue
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,6 +16,20 @@ type fakeBackend struct {
 	sent   []ipc.Command
 	opened []string
 	copied []string
+	// edits are the texts the fake editor returns, in turn; edited
+	// records the texts it was given.
+	edits  []string
+	edited []string
+}
+
+func (f *fakeBackend) Edit(text string) (string, error) {
+	f.edited = append(f.edited, text)
+	if len(f.edits) == 0 {
+		return text, errors.New("no editor")
+	}
+	out := f.edits[0]
+	f.edits = f.edits[1:]
+	return out, nil
 }
 
 func (f *fakeBackend) Send(c ipc.Command)  { f.sent = append(f.sent, c) }
@@ -157,9 +172,9 @@ func TestNavigationAndActions(t *testing.T) {
 	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpAlerts || *be.sent[0].On != false {
 		t.Errorf("n sent %+v", be.sent)
 	}
-	keys(m, "r")
+	keys(m, "p")
 	if be.sent[1].Op != ipc.OpPoll {
-		t.Errorf("r sent %+v", be.sent[1])
+		t.Errorf("p sent %+v", be.sent[1])
 	}
 	keys(m, "d", "n")
 	if len(be.sent) != 2 {
@@ -267,7 +282,7 @@ func TestEventsPanel(t *testing.T) {
 func TestDisconnected(t *testing.T) {
 	m, be := newModel()
 	m.SetConnected(false)
-	keys(m, "r")
+	keys(m, "p")
 	if len(be.sent) != 0 {
 		t.Error("command sent while disconnected")
 	}
@@ -310,7 +325,7 @@ func TestHelpFitsInColumns(t *testing.T) {
 	m, _ := newModel()
 	keys(m, "?")
 	screen := strings.Join(m.View(120, 40), "\n")
-	if !strings.Contains(screen, " Keybindings ") {
+	if !strings.Contains(screen, "[Keybindings]") {
 		t.Errorf("no title chip:\n%s", screen)
 	}
 	for _, sec := range helpSections {
@@ -318,8 +333,8 @@ func TestHelpFitsInColumns(t *testing.T) {
 			t.Errorf("help lacks section %q", sec.title)
 		}
 		for _, r := range sec.keys {
-			if !strings.Contains(screen, r[1]) {
-				t.Errorf("help lacks %q:\n%s", r[1], screen)
+			if !strings.Contains(screen, r.desc) {
+				t.Errorf("help lacks %q:\n%s", r.desc, screen)
 			}
 		}
 	}
@@ -781,8 +796,8 @@ func TestFooterHints(t *testing.T) {
 	}
 	// The comments list names its own rows.
 	keys(m, "v")
-	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · e expand · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
-	if wide := m.View(240, 16)[15]; !strings.Contains(wide, want) {
+	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · e expand · r reply · R resolve · J/K scroll comment · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
+	if wide := m.View(280, 16)[15]; !strings.Contains(wide, want) {
 		t.Errorf("wide footer, comments = %q", wide)
 	}
 	keys(m, "v")
@@ -1062,5 +1077,177 @@ func TestLifecycleChip(t *testing.T) {
 				t.Errorf("%s chip %s: contrast %.1f", name, c, r)
 			}
 		}
+	}
+}
+
+func TestReply(t *testing.T) {
+	m, be := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	keys(m, "r")
+	if len(be.edited) != 0 || !strings.Contains(m.View(100, 20)[19], "press v") {
+		t.Fatalf("r in the checks list: edited %v, footer %q", be.edited, m.View(100, 20)[19])
+	}
+
+	// On the conversation: a new comment, asked before posting.
+	be.edits = []string{"Looks good\nthanks\n"}
+	keys(m, "v", "r")
+	if m.mode != modeConfirm || m.confirmMsg != "Comment on org/repo#123 (2 lines)?" {
+		t.Fatalf("mode %v, confirm %q", m.mode, m.confirmMsg)
+	}
+	sent := len(be.sent)
+	keys(m, "n") // declined: kept as a draft
+	if len(be.sent) != sent {
+		t.Fatalf("declined reply sent: %+v", be.sent[sent:])
+	}
+	be.edits = []string{"Looks good, thanks"}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "Looks good\nthanks" {
+		t.Errorf("draft not reopened: %q", be.edited)
+	}
+	keys(m, "y")
+	last := be.sent[len(be.sent)-1]
+	if last.Op != ipc.OpReply || last.Thread != model.ConversationID || last.Body != "Looks good, thanks" {
+		t.Fatalf("sent %+v", last)
+	}
+	m.Done(last, "commented on org/repo#123", nil) // posted: the draft goes
+	be.edits = []string{""}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "" || m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "nothing written") {
+		t.Errorf("after posting: editor got %q, mode %v", be.edited[len(be.edited)-1], m.mode)
+	}
+
+	// On a code thread: a reply in it; a failed post keeps the draft.
+	be.edits = []string{"done"}
+	keys(m, "j", "r")
+	if m.confirmMsg != "Reply on a.go:3 (1 line)?" {
+		t.Fatalf("confirm %q", m.confirmMsg)
+	}
+	keys(m, "y")
+	last = be.sent[len(be.sent)-1]
+	m.Done(last, "", errors.New("github: 403 forbidden"))
+	be.edits = []string{"done"}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "done" {
+		t.Errorf("failed reply's draft lost: %q", be.edited)
+	}
+	keys(m, kEsc)
+
+	// The editor failing says so.
+	be.edits = nil
+	keys(m, "r")
+	if m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "no editor") {
+		t.Errorf("editor error not shown: %q", m.View(100, 20)[19])
+	}
+}
+
+func TestResolve(t *testing.T) {
+	m, be := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	keys(m, "v", "R") // the conversation
+	if m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "cannot be resolved") {
+		t.Fatalf("R on the conversation: %q", m.View(100, 20)[19])
+	}
+	keys(m, "j", "R", "y") // a.go:3, unresolved
+	last := be.sent[len(be.sent)-1]
+	if last.Op != ipc.OpResolve || last.Thread != "T1" || !*last.On {
+		t.Errorf("resolve sent %+v", last)
+	}
+	keys(m, "G", "R") // b.go:7, resolved
+	if m.confirmMsg != "Unresolve b.go:7?" {
+		t.Errorf("confirm %q", m.confirmMsg)
+	}
+	keys(m, "y")
+	if last := be.sent[len(be.sent)-1]; last.Thread != "T2" || *last.On {
+		t.Errorf("unresolve sent %+v", last)
+	}
+	// In the checks list, R still re-runs failed CI.
+	keys(m, "v", "R")
+	if m.confirmMsg != "Re-run the failed CI of org/repo#123?" {
+		t.Errorf("R in the checks list: %q", m.confirmMsg)
+	}
+}
+
+func TestScrollComment(t *testing.T) {
+	m, _ := newModel()
+	s := withComments(snapshot())
+	var long []string
+	for i := 1; i <= 30; i++ {
+		long = append(long, fmt.Sprintf("line %d", i))
+	}
+	s.Items[0].Threads[1].Comments[0].Body = strings.Join(long, "\n") // r1, by me
+	m.SetSnapshot(s)
+	keys(m, "v", "j", "e", "j") // a.go:3 expanded, its first comment selected
+	view := func() []string { return listRows(m.View(100, 20)) }
+	body := view()
+	n := len(body)
+	if !strings.HasPrefix(body[n-1], "   │     ↓ ") || !strings.HasSuffix(strings.TrimRight(body[n-1], " "), "more lines · J") {
+		t.Fatalf("no more-lines marker:\n%s", strings.Join(body, "\n"))
+	}
+
+	// J scrolls the comment; the lines above give way to a marker.
+	keys(m, "J", "J", "J")
+	body = view()
+	if !strings.HasPrefix(body[0], "   │     ↑ 3 lines above · K") || !strings.HasPrefix(body[1], "   │     line 3") {
+		t.Errorf("after 3 J:\n%s", strings.Join(body, "\n"))
+	}
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r1" {
+		t.Errorf("J moved the selection to %+v", c)
+	}
+	// Scrolling stops at the end of the comment.
+	for i := 0; i < 50; i++ {
+		keys(m, "J")
+	}
+	body = view()
+	joined := strings.Join(body, "\n")
+	if !strings.Contains(joined, "line 30") || strings.Contains(joined, "more line") {
+		t.Errorf("at the end:\n%s", joined)
+	}
+	keys(m, "K")
+	// The marker covers a line too: two are hidden below.
+	if !strings.Contains(strings.Join(view(), "\n"), "2 more lines · J") {
+		t.Errorf("after K:\n%s", strings.Join(view(), "\n"))
+	}
+	// j jumps to the next comment, which starts unscrolled.
+	keys(m, "j")
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" || m.cscroll != 0 {
+		t.Errorf("j selected %+v, scroll %d", c, m.cscroll)
+	}
+	// J on a thread row, or in the checks list, does nothing.
+	keys(m, "g", "g", "J")
+	if m.cscroll != 0 {
+		t.Errorf("J on a thread scrolled to %d", m.cscroll)
+	}
+}
+
+func TestLegend(t *testing.T) {
+	m, _ := newModel()
+	keys(m, "?")
+	if screen := strings.Join(m.View(100, 30), "\n"); !strings.Contains(screen, "[Keybindings]") || strings.Contains(screen, "Marks") {
+		t.Fatalf("first page:\n%s", screen)
+	}
+	keys(m, kTab)
+	screen := strings.Join(m.View(100, 30), "\n")
+	if !strings.Contains(screen, "[Legend]") || m.mode != modeHelp {
+		t.Fatalf("tab did not show the legend:\n%s", screen)
+	}
+	// Every icon and mark, with its meaning, in full.
+	for _, sec := range m.legend() {
+		for _, e := range sec.keys {
+			if !strings.Contains(screen, e.key) || !strings.Contains(screen, e.desc) {
+				t.Errorf("legend lacks %q %q:\n%s", e.key, e.desc, screen)
+			}
+		}
+	}
+	keys(m, kTab)
+	if !strings.Contains(strings.Join(m.View(100, 30), "\n"), "Navigation") {
+		t.Error("tab did not go back to the keys")
+	}
+	keys(m, "x")
+	if m.mode != modeNormal {
+		t.Error("any other key should close the panel")
+	}
+	keys(m, "?")
+	if m.helpPage != 0 {
+		t.Error("? should open on the keys")
 	}
 }
