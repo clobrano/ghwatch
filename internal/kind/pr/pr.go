@@ -178,6 +178,12 @@ const prSelection = `
       author { login }
       labels(first: 20) { nodes { name color } }
       mergeQueueEntry { state position enqueuedAt estimatedTimeToMerge mergeQueue { url } }
+      comments(last: 20) { totalCount nodes { id author { login } bodyText createdAt url viewerDidAuthor } }
+      reviews(last: 20) { nodes { id author { login } bodyText state submittedAt url viewerDidAuthor } }
+      reviewThreads(last: 50) { nodes {
+        id isResolved isOutdated path line originalLine
+        comments(last: 5) { totalCount nodes { id author { login } bodyText createdAt url viewerDidAuthor } }
+      } }
       commits(last: 1) { nodes { commit {
         oid committedDate
         statusCheckRollup { contexts(first: 100) { nodes {
@@ -224,6 +230,27 @@ type prNode struct {
 			URL string `json:"url"`
 		} `json:"mergeQueue"`
 	} `json:"mergeQueueEntry"`
+	Comments struct {
+		TotalCount int           `json:"totalCount"`
+		Nodes      []commentNode `json:"nodes"`
+	} `json:"comments"`
+	Reviews struct {
+		Nodes []commentNode `json:"nodes"`
+	} `json:"reviews"`
+	ReviewThreads struct {
+		Nodes []struct {
+			ID           string `json:"id"`
+			IsResolved   bool   `json:"isResolved"`
+			IsOutdated   bool   `json:"isOutdated"`
+			Path         string `json:"path"`
+			Line         *int   `json:"line"`
+			OriginalLine *int   `json:"originalLine"`
+			Comments     struct {
+				TotalCount int           `json:"totalCount"`
+				Nodes      []commentNode `json:"nodes"`
+			} `json:"comments"`
+		} `json:"nodes"`
+	} `json:"reviewThreads"`
 	Commits struct {
 		Nodes []struct {
 			Commit struct {
@@ -278,8 +305,100 @@ func (p *prNode) toItem(id, repo string) model.Item {
 	if it.Checks == nil {
 		it.Checks = []model.Check{}
 	}
+	it.Threads = p.threads()
 	it.State = model.ItemState(it)
 	return it
+}
+
+// commentNode is an issue comment, a review or a review comment: the
+// fields of GitHub's Comment interface ghwatch uses, plus a review's.
+type commentNode struct {
+	ID     string `json:"id"`
+	Author *struct {
+		Login string `json:"login"`
+	} `json:"author"`
+	BodyText        string     `json:"bodyText"`
+	CreatedAt       *time.Time `json:"createdAt"`
+	SubmittedAt     *time.Time `json:"submittedAt"` // reviews
+	State           string     `json:"state"`       // reviews
+	URL             string     `json:"url"`
+	ViewerDidAuthor bool       `json:"viewerDidAuthor"`
+}
+
+func (c commentNode) toComment() model.Comment {
+	out := model.Comment{ID: c.ID, Body: text(c.BodyText), URL: c.URL, Mine: c.ViewerDidAuthor}
+	if c.Author != nil {
+		out.Author = c.Author.Login
+	} else {
+		out.Author = "ghost" // a deleted account
+	}
+	switch {
+	case c.SubmittedAt != nil:
+		out.CreatedAt = *c.SubmittedAt
+	case c.CreatedAt != nil:
+		out.CreatedAt = *c.CreatedAt
+	}
+	if c.State != "" {
+		out.Review = strings.ToLower(c.State)
+		if out.Body == "" {
+			out.Body = strings.ReplaceAll(out.Review, "_", " ")
+		}
+	}
+	return out
+}
+
+// text is a comment's text without surrounding blank space, cut at
+// model.BodyLimit characters.
+func text(body string) string {
+	body = strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n"))
+	if r := []rune(body); len(r) > model.BodyLimit {
+		return string(r[:model.BodyLimit-1]) + "…"
+	}
+	return body
+}
+
+// threads returns the pull request's conversation, then its review
+// threads in GitHub's order.
+func (p *prNode) threads() []model.Thread {
+	conv := model.Thread{ID: model.ConversationID, URL: p.URL, Total: p.Comments.TotalCount}
+	for _, c := range p.Comments.Nodes {
+		conv.Comments = append(conv.Comments, c.toComment())
+	}
+	for _, r := range p.Reviews.Nodes {
+		// A pending review is the viewer's unsent draft; a "commented"
+		// review without text only wraps comments on code, which are in
+		// their threads.
+		if r.State == "PENDING" || r.State == "COMMENTED" && strings.TrimSpace(r.BodyText) == "" {
+			continue
+		}
+		conv.Comments = append(conv.Comments, r.toComment())
+		conv.Total++
+	}
+	sort.SliceStable(conv.Comments, func(i, j int) bool { return conv.Comments[i].CreatedAt.Before(conv.Comments[j].CreatedAt) })
+	if n := len(conv.Comments); n > 20 {
+		conv.Comments = conv.Comments[n-20:]
+	}
+	if conv.Comments == nil {
+		conv.Comments = []model.Comment{}
+	}
+	out := []model.Thread{conv}
+	for _, t := range p.ReviewThreads.Nodes {
+		th := model.Thread{ID: t.ID, Path: t.Path, Resolved: t.IsResolved, Outdated: t.IsOutdated, Total: t.Comments.TotalCount, URL: p.URL + "/files"}
+		switch {
+		case t.Line != nil:
+			th.Line = *t.Line
+		case t.OriginalLine != nil:
+			th.Line = *t.OriginalLine
+		}
+		for _, c := range t.Comments.Nodes {
+			th.Comments = append(th.Comments, c.toComment())
+		}
+		if th.Comments == nil {
+			th.Comments = []model.Comment{}
+		}
+		out = append(out, th)
+	}
+	return out
 }
 
 // Retest implements kind.Retester: it re-runs the failed jobs of every

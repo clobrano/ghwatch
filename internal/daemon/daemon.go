@@ -303,7 +303,23 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 	d.fresh[cur.ID] = true
 	cur.Alerts = prev.Alerts
 	cur.WatchedChecks = prev.WatchedChecks
+	cur.WatchedThreads = prev.WatchedThreads
 	cur.Muted = prev.Muted
+	cur.CommentsReadAt = prev.CommentsReadAt
+	if cur.CommentsReadAt.IsZero() {
+		// First fetch of the comments: the existing ones are not new,
+		// even if GitHub's clock is ahead of this one.
+		cur.CommentsReadAt = now
+		if last := cur.LatestComment(); last.After(now) {
+			cur.CommentsReadAt = last
+		}
+	}
+	for i := range cur.Threads {
+		for j := range cur.Threads[i].Comments {
+			c := &cur.Threads[i].Comments[j]
+			c.Ignored = d.Config.Ignores(c.Author)
+		}
+	}
 	var prevp *model.Item
 	if prev.HeadSHA != "" {
 		prevp = &prev
@@ -343,6 +359,15 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 		if forItem || forCheck {
 			notes = append(notes, notify.Format(t, cur))
 		}
+	}
+	var comments []model.Transition
+	for _, t := range model.CommentDiff(&prev, cur) {
+		if cur.Alerts && d.snap.Settings.Events[model.EventComment] || cur.WatchingThread(t.Thread) {
+			comments = append(comments, t)
+		}
+	}
+	if len(comments) > 0 {
+		notes = append(notes, notify.FormatComments(comments, cur))
 	}
 	return notes
 }
@@ -540,7 +565,7 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 			if !it.HasAlerts() {
 				return fmt.Sprintf("no alerts set on %s", cmd.ID), nil
 			}
-			it.Alerts, it.WatchedChecks, it.Muted = false, nil, false
+			it.Alerts, it.WatchedChecks, it.WatchedThreads, it.Muted = false, nil, nil, false
 			d.publishLocked()
 			return fmt.Sprintf("alerts cleared for %s", cmd.ID), nil
 		}
@@ -582,6 +607,45 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 			return fmt.Sprintf("alerts %s for job %s", onOff(*cmd.On), cmd.Check), nil
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)
+	case ipc.OpThreadAlerts:
+		if cmd.On == nil || cmd.Thread == "" {
+			return "", errors.New("thread_alerts: missing thread or on")
+		}
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		it := d.snap.Find(cmd.ID)
+		if it == nil {
+			return "", fmt.Errorf("not watching %s", cmd.ID)
+		}
+		name := cmd.Thread
+		for _, t := range it.Threads {
+			if t.ID == cmd.Thread {
+				name = t.Name()
+			}
+		}
+		watched := slices.DeleteFunc(slices.Clone(it.WatchedThreads), func(n string) bool { return n == cmd.Thread })
+		if *cmd.On {
+			watched = append(watched, cmd.Thread)
+		}
+		if len(watched) == 0 {
+			watched = nil
+		}
+		it.WatchedThreads = watched
+		unmuteOnChange(it, *cmd.On)
+		d.publishLocked()
+		return fmt.Sprintf("alerts %s for comments on %s", onOff(*cmd.On), name), nil
+	case ipc.OpCommentsRead:
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		it := d.snap.Find(cmd.ID)
+		if it == nil {
+			return "", fmt.Errorf("not watching %s", cmd.ID)
+		}
+		if last := it.LatestComment(); last.After(it.CommentsReadAt) {
+			it.CommentsReadAt = last
+			d.publishLocked()
+		}
+		return "", nil
 	case ipc.OpEvents:
 		for k := range cmd.Events {
 			if !slices.Contains(model.EventTypes, k) {

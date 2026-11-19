@@ -77,9 +77,14 @@ func (m *Model) lines(w, h int) []line {
 	// The job list sits in a box: border, column header, separator, rows.
 	rows := h - len(out) - 1 - 4
 	var b []line
-	if m.mode == modeFind {
+	switch {
+	case m.mode == modeFind && m.view == viewComments:
+		b = m.findThreadsBody(w-2, rows)
+	case m.mode == modeFind:
 		b = m.findBody(w-2, rows)
-	} else {
+	case m.view == viewComments:
+		b = m.commentsBody(w-2, rows)
+	default:
 		b = m.checksBody(w-2, rows)
 	}
 	content := []line{m.columnHeader(w - 2), {{strings.Repeat("─", w-2), sBorder}}}
@@ -90,8 +95,46 @@ func (m *Model) lines(w, h int) []line {
 			content = append(content, line{})
 		}
 	}
-	out = append(out, box(content, w, sBorder, "", false)...)
+	list := box(content, w, sBorder, "", false)
+	list[0] = m.listTitle(w)
+	out = append(out, list...)
 	return append(out, m.footer(w))
+}
+
+// listTitle is the list box's top border, naming the two lists a PR has,
+// comments first, with the one shown highlighted: v switches between them.
+func (m *Model) listTitle(w int) line {
+	name := func(text string, on bool) seg {
+		if on {
+			if !m.Color {
+				return seg{"[" + text + "]", ""}
+			}
+			return seg{" " + text + " ", bgAccent + sBold + sWhite}
+		}
+		return seg{" " + text + " ", sMuted}
+	}
+	comments := "Comments"
+	if it := m.current(); it != nil {
+		if k := m.newShown(it); k > 0 {
+			comments += " " + strconv.Itoa(k) + " new"
+		}
+	}
+	l := line{{"┌─", sBorder}, name(comments, m.view == viewComments), {"─", sBorder}, name("Checks", m.view == viewChecks)}
+	l = append(l, seg{" v switches ", sDim})
+	if n := w - 1 - l.width(); n > 0 {
+		l = append(l, seg{strings.Repeat("─", n), sBorder})
+	}
+	return append(cut(l, w-1), seg{"┐", sBorder})
+}
+
+// newShown counts the comments of it shown as new in this visit.
+func (m *Model) newShown(it *model.Item) int {
+	readAt := m.readMark(it)
+	n := 0
+	for _, t := range it.Threads {
+		n += t.NewSince(readAt)
+	}
+	return n
 }
 
 // titleBar is the top line: the app name, how many PRs are watched and
@@ -108,8 +151,9 @@ func (m *Model) titleBar(w int) line {
 	}
 	left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%d %s", len(items), prs), sMuted})
 	counts := map[model.State]int{}
-	alerts, unseen := 0, 0
+	alerts, unseen, comments := 0, 0, 0
 	for _, it := range items {
+		comments += it.NewComments()
 		st := model.ItemState(it)
 		if st == model.Pending {
 			st = model.Running
@@ -135,6 +179,9 @@ func (m *Model) titleBar(w int) line {
 	}
 	if unseen > 0 {
 		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s%d new", unseenMark, unseen), sBold + sYellow})
+	}
+	if comments > 0 {
+		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s %d", commentMark(), comments), sBold + sYellow})
 	}
 	if m.snap.Settings.Mute {
 		left = append(left, seg{" · ", sDim}, seg{"muted", sYellow})
@@ -185,6 +232,9 @@ func (m *Model) tabLabels() []line {
 		}
 		if it.Unseen {
 			l = append(l, seg{" " + unseenMark, sBold + sYellow})
+		}
+		if n := it.NewComments(); n > 0 {
+			l = append(l, seg{fmt.Sprintf(" %s %d", commentMark(), n), sBold + sYellow})
 		}
 		l = append(l, seg{"  ", ""})
 		if i == m.activeIdx {
@@ -319,11 +369,20 @@ func (m *Model) header(w int) []line {
 		add(seg{"alerts on", sAccent})
 	}
 	if n := len(it.WatchedChecks); n > 0 && !it.Muted {
-		jobs := "jobs"
-		if n == 1 {
-			jobs = "job"
+		add(seg{bellIcon + " " + plural(n, "job"), sAccent})
+	}
+	if n := len(it.WatchedThreads); n > 0 && !it.Muted {
+		add(seg{bellIcon + " " + plural(n, "thread"), sAccent})
+	}
+	// Comments come last: new ones are counted in the list's title.
+	open := 0
+	for _, t := range it.Threads {
+		if t.ID != model.ConversationID && !t.Resolved {
+			open++
 		}
-		add(seg{fmt.Sprintf("%s %d %s", bellIcon, n, jobs), sAccent})
+	}
+	if open > 0 {
+		add(seg{plural(open, "unresolved thread"), sMuted})
 	}
 	if it.Error != "" {
 		add(seg{"! " + it.Error, sRed})
@@ -423,6 +482,14 @@ func labelStyle(hex string) string {
 	return fmt.Sprintf("\x1b[48;2;%d;%d;%d;%sm", r, g, b, fg)
 }
 
+// plural is "1 job" or "2 jobs".
+func plural(n int, what string) string {
+	if n != 1 {
+		what += "s"
+	}
+	return strconv.Itoa(n) + " " + what
+}
+
 func short(sha string) string {
 	if len(sha) > 7 {
 		return sha[:7]
@@ -469,60 +536,85 @@ func (m *Model) checksBody(w, rows int) []line {
 		anyRequired = anyRequired || c.Required
 	}
 	sel := m.selIndex(it.ID, checks)
+	groups := make([]int, len(checks))
+	for i, c := range checks {
+		groups[i] = checkGroup(c.State)
+	}
+	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sDim}
+	return m.groupedRows(it.ID, groups, sel, 0, -1, rows,
+		func(g, n int) line {
+			return line{{" " + groupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sDim}}
+		},
+		func(i int) []line { return []line{m.checkRow(it, checks[i], i == sel, w, anyRequired)} })
+}
 
-	// One header row per non-empty group, then its checks.
+// groupedRows lays out a list whose entries are sorted by group: a header
+// row per non-empty group, then its entries, scrolled so the selected
+// entry is visible (with its group header when it is the first of its
+// group). An entry is its row and, when expanded, lines below it. Lines
+// from to to (-1: the last) of the selected entry are kept in view, as
+// far as they fit, from the first. topKey keeps the scroll position of
+// this list between frames.
+func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int, header func(group, count int) line, entry func(i int) []line) []line {
 	type row struct {
-		check int // index in checks, or -1 for a group header
+		entry int // index of the entry, or -1 for a group header
+		line  int // line of the entry
 		group int
 		count int
 	}
 	var list []row
-	selRow := 0
-	for i, c := range checks {
-		g := checkGroup(c.State)
-		if i == 0 || checkGroup(checks[i-1].State) != g {
-			list = append(list, row{check: -1, group: g})
+	var lines [][]line
+	selRow, selEnd := 0, 0
+	for i, g := range groups {
+		if i == 0 || groups[i-1] != g {
+			list = append(list, row{entry: -1, group: g})
 		}
+		e := entry(i)
+		lines = append(lines, e)
 		if i == sel {
-			selRow = len(list)
+			last := len(e) - 1
+			if to >= 0 {
+				last = min(to, last)
+			}
+			selRow, selEnd = len(list)+min(from, last), len(list)+last
 		}
-		list = append(list, row{check: i, group: g})
+		for k := range e {
+			list = append(list, row{entry: i, line: k, group: g})
+		}
 	}
 	for i := range list {
-		if list[i].check < 0 {
-			for j := i + 1; j < len(list) && list[j].check >= 0; j++ {
-				list[i].count++
+		if list[i].entry < 0 {
+			for j := i + 1; j < len(list) && list[j].entry >= 0; j++ {
+				if list[j].line == 0 {
+					list[i].count++
+				}
 			}
 		}
 	}
-
-	// Scroll so the selected check is visible, with its group header when
-	// it is the first of its group.
-	top := m.top[it.ID]
+	top := m.top[topKey]
 	first := selRow
-	if first > 0 && list[first-1].check < 0 {
+	if first > 0 && list[first-1].entry < 0 && list[first].line == 0 {
 		first--
 	}
 	if first < top {
 		top = first
 	}
-	if selRow >= top+rows {
-		top = selRow - rows + 1
+	if selEnd >= top+rows {
+		top = min(selEnd-rows+1, selRow)
 	}
 	top = max(min(top, len(list)-rows), 0)
-	m.top[it.ID] = top
+	m.top[topKey] = top
 
-	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sDim}
 	var out []line
 	for _, r := range list[top:] {
 		if len(out) >= rows {
 			break
 		}
-		if r.check < 0 {
-			out = append(out, line{{" " + groupNames[r.group], groupStyle[r.group] + sBold}, {" · " + strconv.Itoa(r.count), sDim}})
+		if r.entry < 0 {
+			out = append(out, header(r.group, r.count))
 			continue
 		}
-		out = append(out, m.checkRow(it, checks[r.check], r.check == sel, w, anyRequired))
+		out = append(out, lines[r.entry][r.line])
 	}
 	return out
 }
@@ -541,6 +633,9 @@ func nameWidth(w int, anyRequired bool) int {
 
 // columnHeader is the job list's header row, like jira-tabbed-tui's.
 func (m *Model) columnHeader(w int) line {
+	if m.view == viewComments {
+		return line{{"   " + padRight("Thread", threadNameWidth(w)) + " " + padLeft("Last", timeW) + "  " + padRight("Author", authorW), sBold + sText}}
+	}
 	anyRequired := false
 	if it := m.current(); it != nil {
 		for _, c := range it.Checks {
@@ -664,7 +759,7 @@ func (m *Model) eventsContent() []line {
 	}
 	out := []line{
 		{{"Notify on these events, for PRs with alerts on (n).", sMuted}},
-		{{"A job with its own bell (b) notifies on every change.", sMuted}},
+		{{"A job or thread with its own bell (b) notifies on every change.", sMuted}},
 		{},
 	}
 	for i, e := range model.EventTypes {
@@ -682,17 +777,19 @@ var helpSections = []struct {
 	{"Navigation", [][2]string{
 		{"h / l, gT / gt", "previous / next tab"},
 		{"1 – 9", "jump to tab N"},
-		{"j / k, gg / G", "move between jobs"},
-		{"/", "find a job by name"},
+		{"j / k, gg / G", "move between jobs or threads"},
+		{"v", "switch between checks and comments"},
+		{"e", "expand / fold a comment thread"},
+		{"/", "find a job or thread"},
 	}},
 	{"Links", [][2]string{
-		{"enter", "open the job page"},
+		{"enter", "open the job or comment page"},
 		{"o", "open the PR page"},
-		{"y / Y", "copy PR / job URL"},
+		{"y / Y", "copy PR / job or comment URL"},
 	}},
 	{"Notifications", [][2]string{
 		{"n", "alerts for this PR"},
-		{"b", "alerts for this job"},
+		{"b", "alerts for this job or thread"},
 		{"m", "mute / restore this PR's alerts"},
 		{"c", "clear all of this PR's alerts"},
 		{"N", "alert settings, mute all"},
@@ -805,33 +902,36 @@ func (m *Model) footer(w int) line {
 	case m.snap != nil && m.snap.Stale && m.snap.Error != "":
 		left = line{{"  ! " + m.snap.Error, sYellow}}
 	default:
-		left = hintLine(w - right.width() - 1)
+		left = hintLine(w-right.width()-1, m.view)
 	}
 	return spread(left, right, w)
 }
 
 // footerHints are the key hints of the footer, in display order. Each says
-// what the key does; drop is the order in which they give way on narrow
+// what the key does, in the checks list and, when it differs, in the
+// comments list (a hint without a checks label is for comments only); drop is the order in which they give way on narrow
 // screens (higher first). "? all keys" always stays.
 var footerHints = []struct {
-	key, label string
-	drop       int
+	key, label, comments string
+	drop                 int
 }{
-	{"h/l", "prev/next PR", 3},
-	{"j/k", "next/prev job", 4},
-	{"enter", "open job", 1},
-	{"o", "open PR", 2},
-	{"y/Y", "copy PR/job link", 8},
-	{"n", "alert PR", 5},
-	{"b", "alert job", 6},
-	{"N", "alert settings", 9},
-	{"/", "find job", 7},
-	{"?", "all keys", 0},
+	{"h/l", "prev/next PR", "", 3},
+	{"j/k", "next/prev job", "next/prev thread", 4},
+	{"v", "comments", "checks", 5},
+	{"enter", "open job", "open comment", 1},
+	{"e", "", "expand", 11}, // comments only
+	{"o", "open PR", "", 2},
+	{"y/Y", "copy PR/job link", "copy PR/comment link", 9},
+	{"n", "alert PR", "", 6},
+	{"b", "alert job", "alert thread", 7},
+	{"N", "alert settings", "", 10},
+	{"/", "find job", "find thread", 8},
+	{"?", "all keys", "", 0},
 }
 
-// hintLine renders as many footer hints as fit in w cells: keys in the
-// accent, what they do in grey.
-func hintLine(w int) line {
+// hintLine renders as many footer hints as fit in w cells, for the list
+// shown: keys in the accent, what they do in grey.
+func hintLine(w, view int) line {
 	keep := make([]bool, len(footerHints))
 	for i := range keep {
 		keep[i] = true
@@ -840,14 +940,18 @@ func hintLine(w int) line {
 		l := line{{"  ", ""}}
 		first := true
 		for i, h := range footerHints {
-			if !keep[i] {
+			if !keep[i] || h.label == "" && view != viewComments {
 				continue
 			}
 			if !first {
 				l = append(l, seg{" · ", sDim})
 			}
 			first = false
-			l = append(l, seg{h.key, sBold + sAccent}, seg{" " + h.label, sSecondary})
+			label := h.label
+			if view == viewComments && h.comments != "" {
+				label = h.comments
+			}
+			l = append(l, seg{h.key, sBold + sAccent}, seg{" " + label, sSecondary})
 		}
 		return l
 	}

@@ -206,3 +206,45 @@ func TestNoteworthy(t *testing.T) {
 		}
 	}
 }
+
+func TestComments(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 1, 1, 10, m, 0, 0, time.UTC) }
+	comment := func(id string, m int) Comment {
+		return Comment{ID: id, Author: "alice", Body: id, CreatedAt: at(m), URL: "u/" + id}
+	}
+	prev := Item{ID: "pr:o/r#1", CommentsReadAt: at(5), Threads: []Thread{
+		{ID: ConversationID, Total: 2, Comments: []Comment{comment("c1", 1), comment("c2", 6)}},
+		{ID: "t1", Path: "a.go", Line: 3, Total: 1, Comments: []Comment{comment("r1", 2)}},
+	}}
+	if n := prev.NewComments(); n != 1 {
+		t.Errorf("NewComments = %d, want 1 (c2)", n)
+	}
+	mine := comment("c4", 8)
+	mine.Mine = true
+	ignored := comment("c5", 9)
+	ignored.Ignored = true
+	cur := prev
+	cur.Threads = []Thread{
+		// c0 is older than the oldest comment prev held: it came back
+		// into the window, it is not new.
+		{ID: ConversationID, Total: 6, Comments: []Comment{comment("c0", 0), comment("c2", 6), comment("c3", 7), mine, ignored}},
+		{ID: "t1", Path: "a.go", Line: 3, Total: 2, Comments: []Comment{comment("r1", 2), comment("r2", 10)}},
+		{ID: "t2", Path: "b.go", Total: 1, Comments: []Comment{comment("s1", 11)}},
+	}
+	var got []string
+	for _, tr := range CommentDiff(&prev, cur) {
+		got = append(got, tr.Comment.ID+"@"+tr.Where)
+	}
+	if want := "c3@conversation r2@a.go:3 s1@b.go"; strings.Join(got, " ") != want {
+		t.Errorf("CommentDiff = %v, want %s", got, want)
+	}
+	if !cur.LatestComment().Equal(at(11)) {
+		t.Errorf("LatestComment = %v", cur.LatestComment())
+	}
+
+	// Before the first fetch nothing is new.
+	prev.CommentsReadAt = time.Time{}
+	if tr := CommentDiff(&prev, cur); tr != nil {
+		t.Errorf("first fetch reported %v", tr)
+	}
+}

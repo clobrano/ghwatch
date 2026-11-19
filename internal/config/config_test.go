@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,5 +87,32 @@ func TestNotifyTimeout(t *testing.T) {
 	os.WriteFile(path, []byte("notify_timeout = \"-1s\"\n"), 0o600)
 	if _, err := Load(path); err == nil {
 		t.Error("negative timeout accepted")
+	}
+}
+
+func TestIgnoreAuthors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	os.WriteFile(path, []byte("[comments]\nignore_authors = [\"OpenShift-CI-Robot\", 'dependabot[bot]' , \"a#b\"] # bots\n"), 0o600)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.IgnoreAuthors, ",") != "openshift-ci-robot,dependabot[bot],a#b" {
+		t.Errorf("IgnoreAuthors = %q", cfg.IgnoreAuthors)
+	}
+	for login, want := range map[string]bool{"openshift-ci-robot": true, "dependabot": true, "Dependabot[bot]": true, "alice": false} {
+		if cfg.Ignores(login) != want {
+			t.Errorf("Ignores(%q) = %v", login, !want)
+		}
+	}
+	for _, bad := range []string{"ignore_authors = \"bot\"\n", "ignore_authors = [bot]\n", "ignore_authors = [\"a\" \"b\"]\n", "ignore_authors = [\"a]\n"} {
+		os.WriteFile(path, []byte(bad), 0o600)
+		if _, err := Load(path); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	os.WriteFile(path, []byte("ignore_authors = []\n"), 0o600)
+	if cfg, err := Load(path); err != nil || len(cfg.IgnoreAuthors) != 0 {
+		t.Errorf("empty list: %q, %v", cfg.IgnoreAuthors, err)
 	}
 }

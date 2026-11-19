@@ -167,3 +167,49 @@ func Format(t model.Transition, it model.Item) Notification {
 	}
 	return n
 }
+
+// FormatComments builds one notification for the new comments of item it
+// found in one poll: the comment itself when there is one, else who wrote
+// how many. Clicking opens the comment, or the PR when there are several.
+func FormatComments(ts []model.Transition, it model.Item) Notification {
+	ref := strings.TrimSpace(fmt.Sprintf("%s#%d %s", it.Repo, it.Number, it.Title))
+	last := ts[len(ts)-1]
+	n := Notification{URL: it.URL, Event: last}
+	if len(ts) == 1 && last.Comment != nil {
+		c := last.Comment
+		what := "commented on " + last.Where
+		if last.Thread == model.ConversationID {
+			what = "commented"
+		}
+		if c.Review != "" && c.Review != "commented" {
+			what = strings.ReplaceAll(c.Review, "_", " ")
+		}
+		n.Title = c.Author + " " + what
+		summary := c.Summary()
+		if r := []rune(summary); len(r) > 200 {
+			summary = string(r[:199]) + "…"
+		}
+		n.Body = summary + "\n" + ref
+		if c.URL != "" {
+			n.URL = c.URL
+		}
+		return n
+	}
+	var authors []string
+	seen := map[string]bool{}
+	for _, t := range ts {
+		if t.Comment != nil && !seen[t.Comment.Author] {
+			seen[t.Comment.Author] = true
+			authors = append(authors, t.Comment.Author)
+		}
+	}
+	n.Title = fmt.Sprintf("%d new comments", len(ts))
+	if len(authors) > 0 {
+		if len(authors) > 3 {
+			authors = append(authors[:3], "…")
+		}
+		n.Title += " from " + strings.Join(authors, ", ")
+	}
+	n.Body = ref
+	return n
+}

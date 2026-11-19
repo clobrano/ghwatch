@@ -21,8 +21,9 @@ The keys you need day to day:
 | Key | Action |
 | --- | --- |
 | `h` / `l` | previous / next PR |
-| `j` / `k` | next / previous job |
-| `enter` | open the selected job in the browser |
+| `j` / `k` | next / previous thread or job |
+| `v` | switch between the PR's comments and its checks |
+| `enter` | open the selected comment, or job, in the browser |
 | `o` | open the PR in the browser |
 | `a` / `d` | add / remove a PR |
 | `?` | all the other keys |
@@ -36,11 +37,13 @@ the screen in detail.
 Notifications are off until you ask for them:
 
 - `n` on a PR: notify about its checks (failures, all passed, new push,
-  merged).
-- `b` on a job: notify about that job only.
+  merged) and new comments.
+- `b` on a comment thread: notify about new comments in it. On a job
+  (press `v` to see the checks): notify about that job only.
 - `m` on a PR: mute all its notifications; `m` again restores them as
   they were.
-- `c` on a PR: clear all its notifications, the PR's and its jobs'.
+- `c` on a PR: clear all its notifications, the PR's, its jobs' and its
+  threads'.
 - `N`: choose which events notify, or mute everything.
 
 Notifications stay on screen for 30 seconds (`timeout` below), where the
@@ -49,7 +52,9 @@ desktop allows it (GNOME ignores it and uses its own, shorter timing). They need
 
 Even without notifications, nothing goes unnoticed: a PR whose state
 changed since you last looked gets an orange `•` on its tab, and the
-title bar counts them (`•2 new`). The mark clears when you go to that tab.
+title bar counts them (`•2 new`). New comments, in the conversation or on
+code, get a comment mark with their count on the tab, and are listed
+first. Both clear when you go to that tab.
 
 ## More
 
@@ -60,8 +65,9 @@ set -g status-right '#(ghwatch status) %H:%M'
 set -g status-interval 10
 ```
 
-This shows e.g. `PR ●3 ✓5 ✗1 •2`: running, passed and failed PRs, and how
-many changed since you last looked. A trailing `!` means the data is stale.
+This shows e.g. `PR ●3 ✓5 ✗1 •2 4`: running, passed and failed PRs, how
+many changed since you last looked, and how many new comments
+(after a comment mark). A trailing `!` means the data is stale.
 `ghwatch status` reads a local file, so it costs nothing to refresh often.
 
 ghwatch uses 24-bit colors. Inside tmux, enable true color, or the colors
@@ -108,13 +114,20 @@ status_template = 'PR {{if .Failed}}{{icon "failed"}}{{.Failed}}{{end}}'
 backend = "desktop"         # desktop | exec | none
 timeout = "30s"             # how long notifications stay on screen
 # command = "curl -s -d @- ntfy.sh/my-topic"   # for backend = "exec"
+
+[comments]
+ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
 ```
 
 - **Icons:** `icons = "safe"` uses characters every common monospace font
   has. Run `ghwatch icons` to compare the sets in your terminal.
 - **Status template:** a Go `text/template` over `.Running`, `.Pending`,
   `.Passed`, `.Failed`, `.Queued`, `.Merged`, `.Closed`, `.Total`,
-  `.Unseen` and `.Stale`. `{{icon "<state>"}}` prints a state's icon.
+  `.Unseen`, `.Comments` and `.Stale`. `{{icon "<state>"}}` prints a
+  state's icon, and `{{icon "comment"}}` the comment mark.
+- **Ignored authors:** comments by these GitHub logins are never new and
+  never notify, e.g. CI bots. Empty by default: bots count like everyone.
+  Your own comments never count.
 - **Exec notifier:** the `exec` backend pipes each notification as JSON
   to `command`, to send it anywhere, e.g. ntfy.sh or a chat webhook.
 - **The watched PRs** are in `~/.config/ghwatch/watch`, one per line. You
@@ -126,7 +139,9 @@ timeout = "30s"             # how long notifications stay on screen
 - Linux; it also builds on macOS and the BSDs, where notifications need the
   `exec` backend.
 - Optional: `notify-send` for notifications, `xdg-open` (or `$BROWSER`) for
-  links, and a [Nerd Font](https://www.nerdfonts.com/) for the alert bell.
+  links, and a [Nerd Font](https://www.nerdfonts.com/) for the alert bell
+  and, with the fancy icons, the comment mark (`icons = "safe"` uses a
+  `c` instead).
 
 ## Development
 

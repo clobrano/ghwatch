@@ -9,6 +9,7 @@ package model
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -89,6 +90,15 @@ func (s State) Icon() string {
 	return "?"
 }
 
+// CommentIcon marks new comments: the Nerd Fonts codicon comment
+// (nf-cod-comment) with the fancy icons, a letter with the others.
+func CommentIcon() string {
+	if iconSet == "fancy" {
+		return "\uea6b"
+	}
+	return "c"
+}
+
 // Done reports whether a check in this state has finished.
 func (s State) Done() bool {
 	switch s {
@@ -147,9 +157,18 @@ type Item struct {
 	// each of their state changes notifies, even with Alerts off. They are
 	// kept across new pushes, since re-run jobs keep their names.
 	WatchedChecks []string `json:"watched_checks,omitempty"`
+	// WatchedThreads names the comment threads (by Thread.ID) with their
+	// own notifications: each new comment in them notifies.
+	WatchedThreads []string `json:"watched_threads,omitempty"`
 	// Muted silences all of the item's notifications, its Alerts and its
-	// WatchedChecks, while keeping them to restore on unmute.
+	// watched checks and threads, while keeping them to restore on unmute.
 	Muted bool `json:"muted,omitempty"`
+	// Threads are the item's comment threads: its conversation, then its
+	// review threads on code.
+	Threads []Thread `json:"threads,omitempty"`
+	// CommentsReadAt is when a user last read the item's comments: newer
+	// comments are new. Zero until the comments are first fetched.
+	CommentsReadAt time.Time `json:"comments_read_at,omitzero"`
 	// Unseen is set when the item changed in a way worth a look (its
 	// state, a new push, a merge) and cleared once a user looked at it.
 	Unseen bool    `json:"unseen,omitempty"`
@@ -181,8 +200,140 @@ func Noteworthy(prev *Item, cur Item) bool {
 }
 
 // HasAlerts reports whether any notification is set on the item, muted
-// or not: its own alerts or a job's.
-func (it Item) HasAlerts() bool { return it.Alerts || len(it.WatchedChecks) > 0 }
+// or not: its own alerts, a job's or a comment thread's.
+func (it Item) HasAlerts() bool {
+	return it.Alerts || len(it.WatchedChecks) > 0 || len(it.WatchedThreads) > 0
+}
+
+// WatchingThread reports whether the thread with the given ID has its
+// own notifications.
+func (it Item) WatchingThread(id string) bool {
+	for _, n := range it.WatchedThreads {
+		if n == id {
+			return true
+		}
+	}
+	return false
+}
+
+// NewComments counts the comments newer than CommentsReadAt.
+func (it Item) NewComments() int {
+	n := 0
+	for _, t := range it.Threads {
+		n += t.NewSince(it.CommentsReadAt)
+	}
+	return n
+}
+
+// LatestComment returns when the newest counted comment was written.
+func (it Item) LatestComment() time.Time {
+	var last time.Time
+	for _, t := range it.Threads {
+		for _, c := range t.Comments {
+			if c.Counts() && c.CreatedAt.After(last) {
+				last = c.CreatedAt
+			}
+		}
+	}
+	return last
+}
+
+// ConversationID is the Thread.ID of an item's main conversation.
+const ConversationID = "conversation"
+
+// Thread is a discussion on an item: its main conversation (comments and
+// review summaries), or a review thread on a line of code.
+type Thread struct {
+	// ID is ConversationID or GitHub's ID of the review thread.
+	ID       string `json:"id"`
+	Path     string `json:"path,omitempty"`
+	Line     int    `json:"line,omitempty"`
+	Resolved bool   `json:"resolved,omitempty"`
+	Outdated bool   `json:"outdated,omitempty"`
+	// Total is the number of comments in the thread; Comments holds only
+	// the latest ones, oldest first.
+	Total    int       `json:"total"`
+	Comments []Comment `json:"comments"`
+	// URL is the thread's page; a comment's own URL is preferred.
+	URL string `json:"url,omitempty"`
+}
+
+// Name is how the thread is shown: "conversation", or the file and line
+// of a review thread.
+func (t Thread) Name() string {
+	switch {
+	case t.ID == ConversationID:
+		return "conversation"
+	case t.Line > 0:
+		return fmt.Sprintf("%s:%d", t.Path, t.Line)
+	case t.Path != "":
+		return t.Path
+	}
+	return "review thread"
+}
+
+// Last returns the thread's latest comment, or nil.
+func (t Thread) Last() *Comment {
+	if len(t.Comments) == 0 {
+		return nil
+	}
+	return &t.Comments[len(t.Comments)-1]
+}
+
+// Link is where to read the thread: its latest comment.
+func (t Thread) Link() string {
+	if c := t.Last(); c != nil && c.URL != "" {
+		return c.URL
+	}
+	return t.URL
+}
+
+// NewSince counts the thread's counted comments written after since.
+func (t Thread) NewSince(since time.Time) int {
+	n := 0
+	for _, c := range t.Comments {
+		if c.Counts() && c.CreatedAt.After(since) {
+			n++
+		}
+	}
+	return n
+}
+
+// Comment is one comment, or a review summary, in a thread.
+type Comment struct {
+	ID     string `json:"id"`
+	Author string `json:"author"`
+	// Body is the comment's text (as GitHub renders it to plain text), cut
+	// at BodyLimit characters.
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	URL       string    `json:"url,omitempty"`
+	// Review is the state of a review summary, lower case: approved,
+	// changes_requested, commented or dismissed. Empty for comments.
+	Review string `json:"review,omitempty"`
+	// Mine is set on comments by the user ghwatch runs as.
+	Mine bool `json:"mine,omitempty"`
+	// Ignored is set on comments by authors in the ignore_authors list.
+	Ignored bool `json:"ignored,omitempty"`
+}
+
+// Counts reports whether the comment can be new and notify: it is
+// neither the user's own nor by an ignored author.
+func (c Comment) Counts() bool { return !c.Mine && !c.Ignored }
+
+// BodyLimit caps a comment's stored text, so a huge comment (a CI bot's
+// report, say) does not bloat the snapshot.
+const BodyLimit = 4000
+
+// Summary is the comment's first non-empty line.
+func (c Comment) Summary() string {
+	for _, l := range strings.Split(c.Body, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			return l
+		}
+	}
+	return ""
+}
 
 // Watching reports whether the check named name has its own notifications.
 func (it Item) Watching(name string) bool {
@@ -229,10 +380,12 @@ const (
 	// skipped, cancelled). It only notifies for watched checks, so it is
 	// not in EventTypes.
 	EventCheckFinished EventType = "check_finished"
+	// EventComment is a new comment, in the conversation or on code.
+	EventComment EventType = "comment"
 )
 
 // EventTypes lists every event type in display order.
-var EventTypes = []EventType{EventCheckFailed, EventAllPassed, EventCheckStarted, EventRestarted, EventFinished}
+var EventTypes = []EventType{EventCheckFailed, EventAllPassed, EventCheckStarted, EventRestarted, EventFinished, EventComment}
 
 // Label is the human description of an event type.
 func (e EventType) Label() string {
@@ -247,6 +400,8 @@ func (e EventType) Label() string {
 		return "CI restarted by a new push"
 	case EventFinished:
 		return "merged or closed"
+	case EventComment:
+		return "new comment"
 	}
 	return string(e)
 }
@@ -365,6 +520,11 @@ type Transition struct {
 	From   State     `json:"from,omitempty"`
 	To     State     `json:"to,omitempty"`
 	URL    string    `json:"url,omitempty"`
+	// Thread, Where and Comment describe a new comment: its thread's ID
+	// and name, and the comment itself.
+	Thread  string   `json:"thread,omitempty"`
+	Where   string   `json:"where,omitempty"`
+	Comment *Comment `json:"comment,omitempty"`
 }
 
 // Diff compares the previous and current state of one item and returns
@@ -405,6 +565,42 @@ func Diff(prev *Item, cur Item) []Transition {
 	}
 	if pa, ca := Aggregate(prev.Checks), Aggregate(cur.Checks); ca == Passed && pa != Passed && len(cur.Checks) > 0 {
 		out = append(out, Transition{Type: EventAllPassed, ItemID: cur.ID, From: pa, To: ca, URL: cur.URL})
+	}
+	return out
+}
+
+// CommentDiff returns a transition for every counted comment of cur that
+// prev did not have. Nothing is reported until prev had its comments
+// fetched (CommentsReadAt is set then), so existing comments of a newly
+// watched item, or of one saved by an older ghwatch, are not new.
+func CommentDiff(prev *Item, cur Item) []Transition {
+	if prev == nil || prev.CommentsReadAt.IsZero() {
+		return nil
+	}
+	known := map[string]bool{}
+	oldest := map[string]time.Time{} // per thread, its oldest fetched comment
+	for _, t := range prev.Threads {
+		for i, c := range t.Comments {
+			known[c.ID] = true
+			if i == 0 {
+				oldest[t.ID] = c.CreatedAt
+			}
+		}
+	}
+	var out []Transition
+	for _, t := range cur.Threads {
+		for _, c := range t.Comments {
+			if known[c.ID] || !c.Counts() {
+				continue
+			}
+			// Only the latest comments of a thread are fetched: an older
+			// one shows up when a newer one is deleted, and is not new.
+			if o, ok := oldest[t.ID]; ok && c.CreatedAt.Before(o) {
+				continue
+			}
+			c := c
+			out = append(out, Transition{Type: EventComment, ItemID: cur.ID, URL: c.URL, Thread: t.ID, Where: t.Name(), Comment: &c})
+		}
 	}
 	return out
 }

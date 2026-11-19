@@ -57,9 +57,10 @@ can be swapped out.
   `-` `/`) is chosen automatically in the two detectable cases, a non-UTF-8
   locale and the Linux console. PR states are letters in every set (`M`
   merged, `Q` queued, `C` closed). UI markers always use safe characters:
-  `›` for the selection, `!` for stale/errors. Only the alert bell is a Nerd
-  Font glyph. A test in `internal/model` keeps the safe and ASCII sets to
-  the allowed characters.
+  `›` for the selection, `!` for stale/errors. Only the alert bell, and the comment
+  mark with the fancy icons, are Nerd Font glyphs. A test in
+  `internal/model` keeps the safe and ASCII sets to the allowed
+  characters.
 
 - **Daemon lifetime**: a daemon auto-started by a TUI exits 10 seconds
   after its last client disconnects (`-idle-exit 10s`). This keeps a
@@ -78,4 +79,14 @@ can be swapped out.
   of its latest state. The daemon takes the start time from earlier polls,
   so a status's duration is exact when ghwatch saw it running.
 - **Rate limit**: one GraphQL query per poll (up to 40 PRs per request).
-  With 20 PRs every 60 s, that is well under 5% of the hourly budget.
+  GitHub charges a query by the connections it reads, and each review
+  thread's comments are one: comments make a poll cost about 56 requests
+  per PR instead of 3. With 20 PRs every 60 s, that is about 11 points a
+  poll, some 13% of the hourly budget of 5,000.
+- **Comments**: what is new is decided locally, from when you last looked
+  at the PR in ghwatch (`comments_read_at`). GitHub's own read state
+  needs the notifications API and a token scope `gh` does not always
+  have. Your own comments never count; bots count unless listed in
+  `ignore_authors`. New comments stay marked for the whole visit of a
+  tab, like the order of belled jobs, so the list does not change while
+  you read it.

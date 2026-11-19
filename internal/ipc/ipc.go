@@ -39,6 +39,11 @@ const (
 	OpClearAlerts = "clear_alerts"
 	// OpSeen clears an item's unseen mark: ID.
 	OpSeen = "seen"
+	// OpThreadAlerts sets notifications for one comment thread: ID,
+	// Thread, On.
+	OpThreadAlerts = "thread_alerts"
+	// OpCommentsRead marks an item's comments read, up to its latest: ID.
+	OpCommentsRead = "comments_read"
 )
 
 // Message types.
@@ -53,6 +58,7 @@ type Command struct {
 	Op     string                   `json:"op"`
 	ID     string                   `json:"id,omitempty"`
 	Check  string                   `json:"check,omitempty"`
+	Thread string                   `json:"thread,omitempty"`
 	On     *bool                    `json:"on,omitempty"`
 	Events map[model.EventType]bool `json:"events,omitempty"`
 }

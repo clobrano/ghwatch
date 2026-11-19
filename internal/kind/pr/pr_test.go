@@ -324,3 +324,48 @@ func TestActionsJobLink(t *testing.T) {
 		t.Errorf("link with pr already set = %q", got[1].URL)
 	}
 }
+
+func TestThreads(t *testing.T) {
+	var p prNode
+	err := json.Unmarshal([]byte(`{"number":1,"state":"OPEN","headRefOid":"abc","url":"https://github.com/o/r/pull/1",
+	  "comments":{"totalCount":31,"nodes":[
+	    {"id":"IC1","author":{"login":"openshift-ci-robot"},"bodyText":"\n  /retest\nmore","createdAt":"2026-01-01T10:05:00Z","url":"u/IC1"},
+	    {"id":"IC2","author":null,"bodyText":"from a deleted account","createdAt":"2026-01-01T10:01:00Z","url":"u/IC2","viewerDidAuthor":false}]},
+	  "reviews":{"nodes":[
+	    {"id":"R1","author":{"login":"bob"},"bodyText":"","state":"APPROVED","submittedAt":"2026-01-01T10:03:00Z","url":"u/R1"},
+	    {"id":"R2","author":{"login":"bob"},"bodyText":"","state":"COMMENTED","submittedAt":"2026-01-01T10:04:00Z","url":"u/R2"},
+	    {"id":"R3","author":{"login":"me"},"bodyText":"draft","state":"PENDING","submittedAt":null,"url":"u/R3","viewerDidAuthor":true}]},
+	  "reviewThreads":{"nodes":[
+	    {"id":"T1","isResolved":false,"isOutdated":true,"path":"pkg/a.go","line":null,"originalLine":42,
+	     "comments":{"totalCount":7,"nodes":[{"id":"RC1","author":{"login":"me"},"bodyText":"done","createdAt":"2026-01-01T10:06:00Z","url":"u/RC1","viewerDidAuthor":true}]}}]}}`), &p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	it := p.toItem("pr:o/r#1", "o/r")
+	if len(it.Threads) != 2 {
+		t.Fatalf("threads = %+v", it.Threads)
+	}
+	conv := it.Threads[0]
+	var got []string
+	for _, c := range conv.Comments {
+		got = append(got, c.ID+"/"+c.Author+"/"+c.Body)
+	}
+	// Oldest first; the empty "commented" review and the pending one are left out.
+	want := "IC2/ghost/from a deleted account R1/bob/approved IC1/openshift-ci-robot//retest\nmore"
+	if strings.Join(got, " ") != want || conv.Total != 32 || conv.Name() != "conversation" {
+		t.Errorf("conversation = %v (total %d), want %s", got, conv.Total, want)
+	}
+	if conv.Comments[2].Summary() != "/retest" {
+		t.Errorf("summary = %q", conv.Comments[2].Summary())
+	}
+	if long := text(strings.Repeat("x", model.BodyLimit+10)); len([]rune(long)) != model.BodyLimit {
+		t.Errorf("long comment kept %d characters", len([]rune(long)))
+	}
+	if conv.Comments[1].Review != "approved" {
+		t.Errorf("review state = %q", conv.Comments[1].Review)
+	}
+	th := it.Threads[1]
+	if th.Name() != "pkg/a.go:42" || !th.Outdated || th.Resolved || th.Total != 7 || !th.Comments[0].Mine || th.Link() != "u/RC1" {
+		t.Errorf("thread = %+v", th)
+	}
+}
