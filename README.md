@@ -108,6 +108,7 @@ Optional, in `~/.config/ghwatch/config.toml`:
 interval = "60s"            # how often to poll GitHub (minimum 10s)
 browser = "firefox"         # default: $BROWSER, then xdg-open
 icons = "fancy"             # or "safe" if some icons show as boxes
+theme = "frappe"            # Catppuccin flavor: latte, frappe, macchiato or mocha
 status_template = 'PR {{if .Failed}}{{icon "failed"}}{{.Failed}}{{end}}'
 
 [notify]
@@ -119,6 +120,9 @@ timeout = "30s"             # how long notifications stay on screen
 ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
 ```
 
+- **Theme:** the colors are a [Catppuccin](https://catppuccin.com)
+  flavor, Frappé by default. ghwatch keeps your terminal's background,
+  so pick the flavor closest to it (`latte` for a light one).
 - **Icons:** `icons = "safe"` uses characters every common monospace font
   has. Run `ghwatch icons` to compare the sets in your terminal.
 - **Status template:** a Go `text/template` over `.Running`, `.Pending`,

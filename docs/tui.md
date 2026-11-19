@@ -1,8 +1,10 @@
 # The ghwatch TUI
 
-Run `ghwatch` to open it. The screen follows the style of
-[jira-tabbed-tui](https://github.com/clobrano/jira-tabbed-tui), from top to
-bottom:
+Run `ghwatch` to open it. Its colors are a
+[Catppuccin](https://catppuccin.com) flavor: Frappé by default, or the one
+set by `theme` in config.toml (`latte`, `frappe`, `macchiato` or `mocha`).
+ghwatch keeps the terminal's background, so pick the flavor that matches
+it. From top to bottom:
 
 - **Title bar:** the app name and how many PRs are watched and in which
   state (failed, running, passed, queued, merged or closed). It also shows

@@ -43,7 +43,7 @@ func stateStyle(s model.State) string {
 	case model.Queued:
 		return sBlue
 	case model.Pending, model.Skipped, model.Cancelled, model.Closed:
-		return sDim
+		return sSecondary
 	}
 	return ""
 }
@@ -109,7 +109,7 @@ func (m *Model) listTitle(w int) line {
 			if !m.Color {
 				return seg{"[" + text + "]", ""}
 			}
-			return seg{" " + text + " ", bgAccent + sBold + sWhite}
+			return seg{" " + text + " ", bgAccent + sBold + sOnAccent}
 		}
 		return seg{" " + text + " ", sMuted}
 	}
@@ -142,7 +142,7 @@ func (m *Model) newShown(it *model.Item) int {
 func (m *Model) titleBar(w int) line {
 	left := line{{" " + appTitle, sBold + sAccent}, {"  " + appTagline, sDim}}
 	if m.snap == nil {
-		return spread(left, line{{"waiting for the daemon… ", sDim}}, w)
+		return spread(left, line{{"waiting for the daemon… ", sSecondary}}, w)
 	}
 	items := m.items()
 	prs := "PRs"
@@ -178,10 +178,10 @@ func (m *Model) titleBar(w int) line {
 		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s %d", bellIcon, alerts), sCyan})
 	}
 	if unseen > 0 {
-		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s%d new", unseenMark, unseen), sBold + sYellow})
+		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s%d new", unseenMark, unseen), sBold + sNew})
 	}
 	if comments > 0 {
-		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s %d", commentMark(), comments), sBold + sYellow})
+		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s %d", commentMark(), comments), sBold + sNew})
 	}
 	if m.snap.Settings.Mute {
 		left = append(left, seg{" · ", sDim}, seg{"muted", sYellow})
@@ -190,11 +190,11 @@ func (m *Model) titleBar(w int) line {
 	var right line
 	switch {
 	case m.snap.PolledAt.IsZero():
-		right = line{{"not polled yet ", sDim}}
+		right = line{{"not polled yet ", sSecondary}}
 	case m.snap.Stale:
 		right = line{{"last poll " + human(m.now().Sub(m.snap.PolledAt)) + " ago ", sYellow}}
 	default:
-		right = line{{"polled " + human(m.now().Sub(m.snap.PolledAt)) + " ago ", sDim}}
+		right = line{{"polled " + human(m.now().Sub(m.snap.PolledAt)) + " ago ", sSecondary}}
 	}
 	return spread(left, right, w)
 }
@@ -231,16 +231,16 @@ func (m *Model) tabLabels() []line {
 			l = append(l, seg{" " + bellIcon, bellStyle(&it, sAccent)})
 		}
 		if it.Unseen {
-			l = append(l, seg{" " + unseenMark, sBold + sYellow})
+			l = append(l, seg{" " + unseenMark, sBold + sNew})
 		}
 		if n := it.NewComments(); n > 0 {
-			l = append(l, seg{fmt.Sprintf(" %s %d", commentMark(), n), sBold + sYellow})
+			l = append(l, seg{fmt.Sprintf(" %s %d", commentMark(), n), sBold + sNew})
 		}
 		l = append(l, seg{"  ", ""})
 		if i == m.activeIdx {
 			// Like jira-tabbed-tui: bold white on the accent.
 			for j := range l {
-				l[j].style = bgAccent + sBold + sWhite
+				l[j].style = bgAccent + sBold + sOnAccent
 			}
 			if !m.Color {
 				l[0].text = " [" + l[0].text[2:]
@@ -286,7 +286,7 @@ func isNumeric(s string) bool {
 func (m *Model) tabBar(w int) line {
 	labels := m.tabLabels()
 	if len(labels) == 0 {
-		return line{{" no watched items", sDim}}
+		return line{{" no watched items", sSecondary}}
 	}
 	width := func(from, to int) int { // cells for labels[from..to]
 		n := 0
@@ -302,7 +302,7 @@ func (m *Model) tabBar(w int) line {
 	var out line
 	used := 0
 	if start > 0 {
-		out = append(out, seg{"‹", sDim})
+		out = append(out, seg{"‹", sSecondary})
 		used++
 	}
 	for i := start; i < len(labels); i++ {
@@ -312,7 +312,7 @@ func (m *Model) tabBar(w int) line {
 			reserve = 1
 		}
 		if used+lw+reserve > w && i > start {
-			out = append(out, seg{"›", sDim})
+			out = append(out, seg{"›", sSecondary})
 			break
 		}
 		out = append(out, labels[i]...)
@@ -324,9 +324,9 @@ func (m *Model) tabBar(w int) line {
 func (m *Model) header(w int) []line {
 	it := m.current()
 	if it == nil {
-		return []line{{{" Nothing watched yet", sBold}}, {{" press a to add a PR, or run: ghwatch add <PR URL>", sDim}}}
+		return []line{{{" Nothing watched yet", sBold}}, {{" press a to add a PR, or run: ghwatch add <PR URL>", sSecondary}}}
 	}
-	title := line{{" " + ref(*it), sBold + sAccent}, {"  " + it.Title, sBold + sWhite}}
+	title := line{{" " + ref(*it), sBold + sAccent}, {"  " + it.Title, sBold + sStrong}}
 	l1 := spread(title, line{{"@" + it.Author + " ", sSecondary}}, w)
 	if it.Author == "" {
 		l1 = title
@@ -342,7 +342,7 @@ func (m *Model) header(w int) []line {
 	switch {
 	case it.HeadSHA == "" && it.Error != "":
 	case it.HeadSHA == "":
-		add(seg{"waiting for the first poll…", sDim})
+		add(seg{"waiting for the first poll…", sSecondary})
 	default:
 		// The merge queue comes first: it is what matters most while queued.
 		if q := it.MergeQueue; q != nil {
@@ -529,7 +529,7 @@ func (m *Model) checksBody(w, rows int) []line {
 		if it.HeadSHA == "" {
 			return nil
 		}
-		return []line{{{" no checks reported on this head yet", sDim}}}
+		return []line{{{" no checks reported on this head yet", sSecondary}}}
 	}
 	anyRequired := false
 	for _, c := range it.Checks {
@@ -540,10 +540,10 @@ func (m *Model) checksBody(w, rows int) []line {
 	for i, c := range checks {
 		groups[i] = checkGroup(c.State)
 	}
-	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sDim}
+	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sSecondary}
 	return m.groupedRows(it.ID, groups, sel, 0, -1, rows,
 		func(g, n int) line {
-			return line{{" " + groupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sDim}}
+			return line{{" " + groupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sSecondary}}
 		},
 		func(i int) []line { return []line{m.checkRow(it, checks[i], i == sel, w, anyRequired)} })
 }
@@ -651,7 +651,7 @@ func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, an
 	nameW := nameWidth(w, anyRequired)
 	marker, nameStyle := seg{" ", ""}, sText
 	if selected {
-		marker, nameStyle = seg{" ", ""}, sBold+sWhite
+		marker, nameStyle = seg{" ", ""}, sBold+sStrong
 		if !m.Color {
 			marker = seg{"›", ""}
 		}
@@ -670,7 +670,7 @@ func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, an
 	l = append(l, seg{" " + padLeft(when, timeW), whenStyle},
 		seg{"  " + padRight(c.Source, srcW), sSecondary})
 	if anyRequired && !c.Required && c.State != model.Queued {
-		l = append(l, seg{" opt", sDim})
+		l = append(l, seg{" opt", sSecondary})
 	}
 	if selected && m.Color {
 		return withStyle(fill(l, w, ""), bgSelect+sBold)
@@ -683,7 +683,7 @@ func (m *Model) findBody(w, rows int) []line {
 	it := m.current()
 	checks, matches := m.findMatches()
 	if len(matches) == 0 {
-		return []line{{{" no matching job", sDim}}}
+		return []line{{{" no matching job", sSecondary}}}
 	}
 	anyRequired := false
 	for _, c := range it.Checks {
@@ -691,7 +691,7 @@ func (m *Model) findBody(w, rows int) []line {
 	}
 	sel := min(m.findSel, len(matches)-1)
 	m.findSel = sel
-	out := []line{{{fmt.Sprintf(" %d of %d jobs match", len(matches), len(checks)), sDim}}}
+	out := []line{{{fmt.Sprintf(" %d of %d jobs match", len(matches), len(checks)), sSecondary}}}
 	start := max(sel-(rows-1)+1, 0)
 	for n, idx := range matches[start:] {
 		if len(out) >= rows {
@@ -706,7 +706,7 @@ func (m *Model) findBody(w, rows int) []line {
 // jira-tabbed-tui's keybindings panel: an accent border, a dark background
 // and a title chip.
 func overlay(w, h int, title string, content []line) []line {
-	body := []line{{{" " + title + " ", bgAccent + sBold + sWhite}}, {}}
+	body := []line{{{" " + title + " ", bgAccent + sBold + sOnAccent}}, {}}
 	body = append(body, content...)
 	inner := 0
 	for _, l := range body {
@@ -722,7 +722,7 @@ func overlay(w, h int, title string, content []line) []line {
 	for i := range padded {
 		padded[i] = withStyle(fill(padded[i], bw-2, ""), bgOverlay)
 	}
-	panel := box(padded, bw, sAccent, "", rounded())
+	panel := box(padded, bw, sPanelBorder, "", rounded())
 	if len(panel) > h {
 		panel = append(panel[:h-1], panel[len(panel)-1])
 	}
@@ -749,7 +749,7 @@ func (m *Model) eventsContent() []line {
 	const rowW = 54
 	row := func(i int, text string) line {
 		if i == m.evSel {
-			l := line{{"› ", sAccent + sBold}, {text, sBold + sWhite}}
+			l := line{{"› ", sAccent + sBold}, {text, sBold + sStrong}}
 			if m.Color {
 				return withStyle(fill(l, rowW, ""), bgSoft)
 			}
@@ -766,7 +766,7 @@ func (m *Model) eventsContent() []line {
 		out = append(out, row(i, check(st.Events[e])+e.Label()))
 	}
 	out = append(out, line{}, row(len(model.EventTypes), check(st.Mute)+"global mute (keeps per-PR settings)"))
-	return append(out, line{}, line{{"j/k move · space toggle · esc close", sDim}})
+	return append(out, line{}, line{{"j/k move · space toggle · esc close", sSecondary}})
 }
 
 // helpSections groups the keys like jira-tabbed-tui's help panel.
@@ -869,7 +869,7 @@ func (m *Model) helpContent(w, h int) []line {
 func (m *Model) footer(w int) line {
 	var right line
 	if m.snap != nil && m.snap.Settings.Mute {
-		right = append(right, seg{"muted · ", sDim})
+		right = append(right, seg{"muted · ", sSecondary})
 	}
 	switch {
 	case !m.connected:
@@ -887,11 +887,11 @@ func (m *Model) footer(w int) line {
 	var left line
 	switch {
 	case m.mode == modeAdd:
-		left = line{{"  Add PR (URL or owner/repo#N): ", sBold + sAccent}, {string(m.input) + "_", sWhite}}
+		left = line{{"  Add PR (URL or owner/repo#N): ", sBold + sAccent}, {string(m.input) + "_", sStrong}}
 	case m.mode == modeFind:
-		left = line{{"  /", sBold + sAccent}, {string(m.input) + "_", sWhite}, {"   ↑/↓ choose · enter select · esc cancel", sDim}}
+		left = line{{"  /", sBold + sAccent}, {string(m.input) + "_", sStrong}, {"   ↑/↓ choose · enter select · esc cancel", sSecondary}}
 	case m.mode == modeConfirm:
-		left = line{{"  " + m.confirmMsg + " ", sBold + sWhite}, {"[y/N]", sYellow}}
+		left = line{{"  " + m.confirmMsg + " ", sBold + sStrong}, {"[y/N]", sYellow}}
 	case m.flash != "" && m.now().Before(m.flashUntil):
 		// Like jira-tabbed-tui: bold green or red, with a mark.
 		if m.flashErr {

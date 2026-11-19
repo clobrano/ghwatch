@@ -2,6 +2,8 @@ package tui
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -711,12 +713,12 @@ func listRows(rows []string) []string {
 	return out
 }
 
-func TestJiraStyle(t *testing.T) {
+func TestStyle(t *testing.T) {
 	m, _ := newModel()
 	m.Color = true
 	rows := m.View(90, 16)
-	// The active tab is bold white on the accent, like jira-tabbed-tui.
-	if !strings.Contains(rows[1], bgAccent+sBold+sWhite+"  1:") {
+	// The active tab is bold, in the base color on the accent.
+	if !strings.Contains(rows[1], bgAccent+sBold+sOnAccent+"  1:") {
 		t.Errorf("active tab not on the accent: %q", rows[1])
 	}
 	// The selected row is a bar across the whole list.
@@ -738,7 +740,7 @@ func TestJiraStyle(t *testing.T) {
 	if !strings.Contains(fancy, "╭") || !strings.Contains(safe, "┌") || strings.Contains(safe, "╭") {
 		t.Error("panel corners do not follow the icon set")
 	}
-	if !strings.Contains(fancy, bgOverlay) || !strings.Contains(fancy, bgAccent+sBold+sWhite+" Keybindings ") {
+	if !strings.Contains(fancy, bgOverlay) || !strings.Contains(fancy, bgAccent+sBold+sOnAccent+" Keybindings ") {
 		t.Error("panel lacks its background or title chip")
 	}
 }
@@ -997,4 +999,50 @@ func TestOpensOnComments(t *testing.T) {
 	if !strings.Contains(rows[5], "[Comments 2 new]") || !strings.HasPrefix(listRows(rows)[0], " New · 2") {
 		t.Errorf("first screen:\n%s", strings.Join(rows, "\n"))
 	}
+}
+
+func TestThemes(t *testing.T) {
+	defer UseTheme(DefaultTheme)
+	if err := UseTheme("dracula"); err == nil {
+		t.Error("unknown theme accepted")
+	}
+	// Every color that carries content reads well on the dark flavors'
+	// base (WCAG's 4.5:1); Overlay 1 and Surface 2 are only decoration.
+	for _, name := range []string{"frappe", "macchiato", "mocha"} {
+		f := themes[name]
+		for role, c := range map[string]string{"text": f.text, "subtext1": f.subtext1, "subtext0": f.subtext0,
+			"blue": f.blue, "sapphire": f.sapphire, "red": f.red, "green": f.green, "yellow": f.yellow,
+			"peach": f.peach, "mauve": f.mauve} {
+			if r := contrast(c, f.base); r < 4.5 {
+				t.Errorf("%s %s: contrast %.1f", name, role, r)
+			}
+		}
+		if r := contrast(f.text, f.surface1); r < 4.5 {
+			t.Errorf("%s: selected row contrast %.1f", name, r)
+		}
+	}
+	if err := UseTheme("mocha"); err != nil || sText != fg("cdd6f4") || bgSelect != bg("45475a") {
+		t.Errorf("mocha: %v %q", err, sText)
+	}
+}
+
+// contrast is the WCAG contrast ratio of two hex colors.
+func contrast(a, b string) float64 {
+	lum := func(hex string) float64 {
+		var rgb [3]int
+		fmt.Sscanf(hex, "%02x%02x%02x", &rgb[0], &rgb[1], &rgb[2])
+		var l float64
+		for i, w := range []float64{0.2126, 0.7152, 0.0722} {
+			c := float64(rgb[i]) / 255
+			if c <= 0.03928 {
+				c /= 12.92
+			} else {
+				c = math.Pow((c+0.055)/1.055, 2.4)
+			}
+			l += w * c
+		}
+		return l
+	}
+	la, lb := lum(a), lum(b)
+	return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
 }
