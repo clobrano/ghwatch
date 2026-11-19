@@ -373,7 +373,11 @@ func TestJobAlerts(t *testing.T) {
 	poll("new head", func(s *model.Snapshot) bool { return s.Items[0].HeadSHA == "b" && s.Items[0].Alerts })
 	set("b", model.Running, model.Failed)
 	poll("e2e failure", func(s *model.Snapshot) bool { return s.Items[0].Checks[1].State == model.Failed })
-	notes = rec.wait(t, 2)
+	// e2e passing, the restart, then the failure; a duplicate would come
+	// right after, so let it arrive.
+	rec.wait(t, 3)
+	time.Sleep(settle)
+	notes = rec.all()
 	var e2eFailed int
 	for _, n := range notes {
 		if n.Event.Type == model.EventCheckFailed && n.Event.Check == "e2e" {
