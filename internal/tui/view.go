@@ -101,8 +101,8 @@ func (m *Model) lines(w, h int) []line {
 	return append(out, m.footer(w))
 }
 
-// listTitle is the job list's top border, naming the two lists a PR has
-// with the one shown highlighted: v switches between them.
+// listTitle is the list box's top border, naming the two lists a PR has,
+// comments first, with the one shown highlighted: v switches between them.
 func (m *Model) listTitle(w int) line {
 	name := func(text string, on bool) seg {
 		if on {
@@ -119,7 +119,7 @@ func (m *Model) listTitle(w int) line {
 			comments += " " + strconv.Itoa(k) + " new"
 		}
 	}
-	l := line{{"┌─", sBorder}, name("Checks", m.view == viewChecks), {"─", sBorder}, name(comments, m.view == viewComments)}
+	l := line{{"┌─", sBorder}, name(comments, m.view == viewComments), {"─", sBorder}, name("Checks", m.view == viewChecks)}
 	l = append(l, seg{" v switches ", sDim})
 	if n := w - 1 - l.width(); n > 0 {
 		l = append(l, seg{strings.Repeat("─", n), sBorder})

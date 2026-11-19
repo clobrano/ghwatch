@@ -23,9 +23,10 @@ bottom:
 - **PR header:** reference, title and author, then head commit, push
   time, progress, failures and unresolved review threads. The PR's
   labels show below as chips in their GitHub colors.
-- **List:** each PR has two lists, its jobs and its comments, and `v`
-  switches between them. The box's top border names both, with the one
-  shown highlighted and the number of new comments (`Comments 3 new`).
+- **List:** each PR has two lists, its comments and its jobs, and `v`
+  switches between them. The box's top border names both, comments
+  first, with the one shown highlighted and the number of new comments
+  (`Comments 3 new`). A PR opens on its jobs.
 - **Job list:** a Check / Time / Source header and the selected job
   highlighted. Jobs are split into groups, each under a
   header with its count: **Failed**, then **Running** (including
