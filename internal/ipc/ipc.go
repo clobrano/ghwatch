@@ -44,6 +44,11 @@ const (
 	OpThreadAlerts = "thread_alerts"
 	// OpCommentsRead marks an item's comments read, up to its latest: ID.
 	OpCommentsRead = "comments_read"
+	// OpReply posts Body in a comment thread: ID, Thread, Body.
+	OpReply = "reply"
+	// OpResolve resolves (On true) or unresolves a review thread: ID,
+	// Thread, On.
+	OpResolve = "resolve"
 )
 
 // Message types.
@@ -59,6 +64,7 @@ type Command struct {
 	ID     string                   `json:"id,omitempty"`
 	Check  string                   `json:"check,omitempty"`
 	Thread string                   `json:"thread,omitempty"`
+	Body   string                   `json:"body,omitempty"`
 	On     *bool                    `json:"on,omitempty"`
 	Events map[model.EventType]bool `json:"events,omitempty"`
 }

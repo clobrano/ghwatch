@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -25,9 +26,24 @@ import (
 // fakePR parses like the real PR kind but serves items from memory.
 type fakePR struct {
 	pr.Kind
-	mu    sync.Mutex
-	items map[string]model.Item
-	calls map[string]int // fetches per item
+	mu      sync.Mutex
+	items   map[string]model.Item
+	calls   map[string]int // fetches per item
+	discuss []string       // replies and resolves, as "op thread text"
+}
+
+func (f *fakePR) Reply(_ context.Context, _ *github.Client, it model.Item, thread, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.discuss = append(f.discuss, "reply "+thread+" "+body)
+	return nil
+}
+
+func (f *fakePR) Resolve(_ context.Context, _ *github.Client, it model.Item, thread string, resolved bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.discuss = append(f.discuss, fmt.Sprintf("resolve %s %v", thread, resolved))
+	return nil
 }
 
 func (f *fakePR) set(it model.Item) {
@@ -683,4 +699,61 @@ func TestComments(t *testing.T) {
 	waitFor(t, c, "read", func(s *model.Snapshot) bool { return s.Items[0].NewComments() == 0 })
 	c.Do(ctx, ipc.Command{Op: ipc.OpClearAlerts, ID: "pr:o/r#1"})
 	waitFor(t, c, "cleared", func(s *model.Snapshot) bool { return s.Items[0].WatchedThreads == nil })
+}
+
+func TestDiscuss(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	os.WriteFile(paths.Watchlist(), []byte("o/r#1\n"), 0o600)
+	fake := &fakePR{items: map[string]model.Item{}}
+	fake.set(model.Item{ID: "pr:o/r#1", Repo: "o/r", Number: 1, HeadSHA: "a", Lifecycle: model.Open,
+		Threads: []model.Thread{{ID: model.ConversationID}, {ID: "T1", Path: "a.go", Line: 3}}})
+	_, cancel, done := startDaemon(t, paths, fake, &recorder{})
+	defer func() { cancel(); <-done }()
+	c := dial(t, paths)
+	waitFor(t, c, "first poll", func(s *model.Snapshot) bool { return len(s.Items[0].Threads) == 2 })
+	ctx := context.Background()
+	on, off := true, false
+	fake.mu.Lock()
+	before := fake.calls["pr:o/r#1"]
+	fake.mu.Unlock()
+	for _, tc := range []struct {
+		cmd  ipc.Command
+		info string
+	}{
+		{ipc.Command{Op: ipc.OpReply, ID: "pr:o/r#1", Thread: model.ConversationID, Body: "LGTM"}, "commented on o/r#1"},
+		{ipc.Command{Op: ipc.OpReply, ID: "pr:o/r#1", Thread: "T1", Body: "done"}, "replied on a.go:3"},
+		{ipc.Command{Op: ipc.OpResolve, ID: "pr:o/r#1", Thread: "T1", On: &on}, "resolved a.go:3"},
+		{ipc.Command{Op: ipc.OpResolve, ID: "pr:o/r#1", Thread: "T1", On: &off}, "unresolved a.go:3"},
+	} {
+		if info, err := c.Do(ctx, tc.cmd); err != nil || info != tc.info {
+			t.Errorf("%+v: %q, %v", tc.cmd, info, err)
+		}
+	}
+	if got := strings.Join(fake.discuss, "|"); got != "reply conversation LGTM|reply T1 done|resolve T1 true|resolve T1 false" {
+		t.Errorf("calls = %s", got)
+	}
+	for _, bad := range []ipc.Command{
+		{Op: ipc.OpReply, ID: "pr:o/r#1", Thread: "T1", Body: "  "},
+		{Op: ipc.OpResolve, ID: "pr:o/r#1", Thread: "T1"},
+		{Op: ipc.OpReply, ID: "pr:o/r#9", Thread: "T1", Body: "x"},
+	} {
+		if _, err := c.Do(ctx, bad); err == nil {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+	// Each change asked for a poll, so it shows.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		fake.mu.Lock()
+		n := fake.calls["pr:o/r#1"]
+		fake.mu.Unlock()
+		if n > before {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no poll after replying")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

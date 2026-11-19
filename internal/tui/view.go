@@ -791,8 +791,12 @@ var helpSections = []struct {
 		{"1 – 9", "jump to tab N"},
 		{"j / k, gg / G", "move between jobs or threads"},
 		{"v", "switch between checks and comments"},
-		{"e", "expand / fold a comment thread"},
 		{"/", "find a job or thread"},
+	}},
+	{"Comments", [][2]string{
+		{"e", "expand / fold a thread"},
+		{"r", "reply (on the conversation: comment)"},
+		{"R", "resolve / unresolve a thread"},
 	}},
 	{"Links", [][2]string{
 		{"enter", "open the job or comment page"},
@@ -809,8 +813,8 @@ var helpSections = []struct {
 	{"Pull requests", [][2]string{
 		{"a", "add a PR"},
 		{"d", "unwatch this PR"},
-		{"r", "poll now"},
-		{"R", "re-run failed CI"},
+		{"p", "poll now"},
+		{"R", "re-run failed CI (checks list)"},
 	}},
 	{"Other", [][2]string{
 		{"? / esc", "close this panel"},
@@ -932,6 +936,8 @@ var footerHints = []struct {
 	{"v", "comments", "checks", 5},
 	{"enter", "open job", "open comment", 1},
 	{"e", "", "expand", 11}, // comments only
+	{"r", "", "reply", 12},
+	{"R", "", "resolve", 13},
 	{"o", "open PR", "", 2},
 	{"y/Y", "copy PR/job link", "copy PR/comment link", 9},
 	{"n", "alert PR", "", 6},

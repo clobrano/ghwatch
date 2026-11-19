@@ -454,3 +454,44 @@ func (Kind) Retest(ctx context.Context, gh *github.Client, it model.Item) (strin
 }
 
 var runRE = regexp.MustCompile(`/actions/runs/(\d+)`)
+
+// Reply implements kind.Discusser: a new comment on the pull request for
+// its conversation, or a reply in a review thread.
+func (Kind) Reply(ctx context.Context, gh *github.Client, it model.Item, thread, body string) error {
+	if thread == model.ConversationID {
+		owner, repo, number, err := Split(it.ID)
+		if err != nil {
+			return err
+		}
+		path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments", owner, repo, number)
+		return gh.REST(ctx, http.MethodPost, path, map[string]string{"body": body}, nil)
+	}
+	return mutate(ctx, gh, `mutation($thread: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $thread, body: $body}) { comment { id } }
+}`, map[string]any{"thread": thread, "body": body})
+}
+
+// Resolve implements kind.Discusser.
+func (Kind) Resolve(ctx context.Context, gh *github.Client, it model.Item, thread string, resolved bool) error {
+	if thread == model.ConversationID {
+		return fmt.Errorf("the conversation cannot be resolved, only threads on code")
+	}
+	op := "resolveReviewThread"
+	if !resolved {
+		op = "unresolveReviewThread"
+	}
+	return mutate(ctx, gh, `mutation($thread: ID!) { `+op+`(input: {threadId: $thread}) { thread { id isResolved } } }`,
+		map[string]any{"thread": thread})
+}
+
+// mutate runs a GraphQL mutation; any error in the response fails it.
+func mutate(ctx context.Context, gh *github.Client, query string, vars map[string]any) error {
+	resp, err := gh.GraphQL(ctx, query, vars)
+	if err != nil {
+		return err
+	}
+	if len(resp.Errors) > 0 {
+		return &github.Error{Message: resp.Errors[0].Message}
+	}
+	return nil
+}

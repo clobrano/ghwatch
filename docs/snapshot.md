@@ -105,4 +105,6 @@ changing the meaning of a field bumps `schema`.
 | `clear_alerts` | `id` | turn off the item's alerts, job and thread bells, and unmute it |
 | `thread_alerts` | `id`, `thread`, `on` | notifications for one comment thread, by id |
 | `comments_read` | `id` | mark the item's comments read, up to its latest |
+| `reply` | `id`, `thread`, `body` | post `body` in a thread: a PR comment for `conversation`, else a reply in the review thread |
+| `resolve` | `id`, `thread`, `on` | resolve (`on` true) or unresolve a review thread |
 | `retest` | `id` | re-trigger failed CI |

@@ -15,6 +15,20 @@ type fakeBackend struct {
 	sent   []ipc.Command
 	opened []string
 	copied []string
+	// edits are the texts the fake editor returns, in turn; edited
+	// records the texts it was given.
+	edits  []string
+	edited []string
+}
+
+func (f *fakeBackend) Edit(text string) (string, error) {
+	f.edited = append(f.edited, text)
+	if len(f.edits) == 0 {
+		return text, errors.New("no editor")
+	}
+	out := f.edits[0]
+	f.edits = f.edits[1:]
+	return out, nil
 }
 
 func (f *fakeBackend) Send(c ipc.Command)  { f.sent = append(f.sent, c) }
@@ -157,9 +171,9 @@ func TestNavigationAndActions(t *testing.T) {
 	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpAlerts || *be.sent[0].On != false {
 		t.Errorf("n sent %+v", be.sent)
 	}
-	keys(m, "r")
+	keys(m, "p")
 	if be.sent[1].Op != ipc.OpPoll {
-		t.Errorf("r sent %+v", be.sent[1])
+		t.Errorf("p sent %+v", be.sent[1])
 	}
 	keys(m, "d", "n")
 	if len(be.sent) != 2 {
@@ -267,7 +281,7 @@ func TestEventsPanel(t *testing.T) {
 func TestDisconnected(t *testing.T) {
 	m, be := newModel()
 	m.SetConnected(false)
-	keys(m, "r")
+	keys(m, "p")
 	if len(be.sent) != 0 {
 		t.Error("command sent while disconnected")
 	}
@@ -781,8 +795,8 @@ func TestFooterHints(t *testing.T) {
 	}
 	// The comments list names its own rows.
 	keys(m, "v")
-	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · e expand · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
-	if wide := m.View(240, 16)[15]; !strings.Contains(wide, want) {
+	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · e expand · r reply · R resolve · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
+	if wide := m.View(260, 16)[15]; !strings.Contains(wide, want) {
 		t.Errorf("wide footer, comments = %q", wide)
 	}
 	keys(m, "v")
@@ -1062,5 +1076,92 @@ func TestLifecycleChip(t *testing.T) {
 				t.Errorf("%s chip %s: contrast %.1f", name, c, r)
 			}
 		}
+	}
+}
+
+func TestReply(t *testing.T) {
+	m, be := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	keys(m, "r")
+	if len(be.edited) != 0 || !strings.Contains(m.View(100, 20)[19], "press v") {
+		t.Fatalf("r in the checks list: edited %v, footer %q", be.edited, m.View(100, 20)[19])
+	}
+
+	// On the conversation: a new comment, asked before posting.
+	be.edits = []string{"Looks good\nthanks\n"}
+	keys(m, "v", "r")
+	if m.mode != modeConfirm || m.confirmMsg != "Comment on org/repo#123 (2 lines)?" {
+		t.Fatalf("mode %v, confirm %q", m.mode, m.confirmMsg)
+	}
+	sent := len(be.sent)
+	keys(m, "n") // declined: kept as a draft
+	if len(be.sent) != sent {
+		t.Fatalf("declined reply sent: %+v", be.sent[sent:])
+	}
+	be.edits = []string{"Looks good, thanks"}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "Looks good\nthanks" {
+		t.Errorf("draft not reopened: %q", be.edited)
+	}
+	keys(m, "y")
+	last := be.sent[len(be.sent)-1]
+	if last.Op != ipc.OpReply || last.Thread != model.ConversationID || last.Body != "Looks good, thanks" {
+		t.Fatalf("sent %+v", last)
+	}
+	m.Done(last, "commented on org/repo#123", nil) // posted: the draft goes
+	be.edits = []string{""}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "" || m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "nothing written") {
+		t.Errorf("after posting: editor got %q, mode %v", be.edited[len(be.edited)-1], m.mode)
+	}
+
+	// On a code thread: a reply in it; a failed post keeps the draft.
+	be.edits = []string{"done"}
+	keys(m, "j", "r")
+	if m.confirmMsg != "Reply on a.go:3 (1 line)?" {
+		t.Fatalf("confirm %q", m.confirmMsg)
+	}
+	keys(m, "y")
+	last = be.sent[len(be.sent)-1]
+	m.Done(last, "", errors.New("github: 403 forbidden"))
+	be.edits = []string{"done"}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "done" {
+		t.Errorf("failed reply's draft lost: %q", be.edited)
+	}
+	keys(m, kEsc)
+
+	// The editor failing says so.
+	be.edits = nil
+	keys(m, "r")
+	if m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "no editor") {
+		t.Errorf("editor error not shown: %q", m.View(100, 20)[19])
+	}
+}
+
+func TestResolve(t *testing.T) {
+	m, be := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	keys(m, "v", "R") // the conversation
+	if m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "cannot be resolved") {
+		t.Fatalf("R on the conversation: %q", m.View(100, 20)[19])
+	}
+	keys(m, "j", "R", "y") // a.go:3, unresolved
+	last := be.sent[len(be.sent)-1]
+	if last.Op != ipc.OpResolve || last.Thread != "T1" || !*last.On {
+		t.Errorf("resolve sent %+v", last)
+	}
+	keys(m, "G", "R") // b.go:7, resolved
+	if m.confirmMsg != "Unresolve b.go:7?" {
+		t.Errorf("confirm %q", m.confirmMsg)
+	}
+	keys(m, "y")
+	if last := be.sent[len(be.sent)-1]; last.Thread != "T2" || *last.On {
+		t.Errorf("unresolve sent %+v", last)
+	}
+	// In the checks list, R still re-runs failed CI.
+	keys(m, "v", "R")
+	if m.confirmMsg != "Re-run the failed CI of org/repo#123?" {
+		t.Errorf("R in the checks list: %q", m.confirmMsg)
 	}
 }
