@@ -116,3 +116,18 @@ func TestIgnoreAuthors(t *testing.T) {
 		t.Errorf("empty list: %q, %v", cfg.IgnoreAuthors, err)
 	}
 }
+
+func TestTheme(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if cfg, _ := Load(path); cfg.Theme != "frappe" {
+		t.Errorf("default theme = %q", cfg.Theme)
+	}
+	os.WriteFile(path, []byte("[ui]\ntheme = \"mocha\"\n"), 0o600)
+	if cfg, err := Load(path); err != nil || cfg.Theme != "mocha" {
+		t.Errorf("mocha: %q, %v", cfg.Theme, err)
+	}
+	os.WriteFile(path, []byte("theme = \"jira\"\n"), 0o600)
+	if _, err := Load(path); err == nil {
+		t.Error("unknown theme accepted")
+	}
+}

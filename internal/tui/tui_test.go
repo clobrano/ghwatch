@@ -667,7 +667,7 @@ func TestLabels(t *testing.T) {
 	s.Items[0].Labels = []model.Label{{Name: "lgtm", Color: "0e8a16"}, {Name: "do-not-merge/hold", Color: "fbca04"}}
 	m.SetSnapshot(s)
 	rows := m.View(90, 16)
-	if rows[5] != "  lgtm   do-not-merge/hold " {
+	if rows[5] != " labels: lgtm · do-not-merge/hold" {
 		t.Errorf("label row = %q", rows[5])
 	}
 	if !strings.HasPrefix(rows[6], "┌") || !strings.HasPrefix(listRows(rows)[0], " Failed · 1") {
@@ -679,15 +679,27 @@ func TestLabels(t *testing.T) {
 		t.Errorf("row 5 without labels = %q", rows[5])
 	}
 
-	// Text is black on light colors, white on dark ones; bad colors fall back.
-	if got := labelStyle("fbca04"); got != "\x1b[48;2;251;202;4;38;2;0;0;0m" {
+	// Labels are bold in their color: kept when readable, lightened just
+	// enough when not (darkened on the light flavor); bad colors fall back.
+	defer UseTheme(DefaultTheme)
+	if got := labelStyle("fbca04"); got != sBold+fg("fbca04") {
 		t.Errorf("yellow = %q", got)
 	}
-	if got := labelStyle("b60205"); got != "\x1b[48;2;182;2;5;38;2;255;255;255m" {
-		t.Errorf("red = %q", got)
+	for _, name := range ThemeNames() {
+		UseTheme(name)
+		for _, c := range []string{"0e8a16", "000000", "b60205", "ffffff", "1d76db"} {
+			out := readable(c, theme.base)
+			if r := contrast(out, theme.base); r < minContrast {
+				t.Errorf("%s: %s became %s, contrast %.1f", name, c, out, r)
+			}
+		}
+	}
+	UseTheme("frappe")
+	if out := readable("0e8a16", theme.base); out == "0e8a16" || !strings.HasPrefix(labelStyle("0e8a16"), sBold) {
+		t.Errorf("dark green kept as is on frappe: %s", out)
 	}
 	for _, bad := range []string{"", "xyz", "12345", "1234567"} {
-		if got := labelStyle(bad); got != sReverse {
+		if got := labelStyle(bad); got != sBold+sText {
 			t.Errorf("labelStyle(%q) = %q", bad, got)
 		}
 	}
@@ -711,12 +723,12 @@ func listRows(rows []string) []string {
 	return out
 }
 
-func TestJiraStyle(t *testing.T) {
+func TestStyle(t *testing.T) {
 	m, _ := newModel()
 	m.Color = true
 	rows := m.View(90, 16)
-	// The active tab is bold white on the accent, like jira-tabbed-tui.
-	if !strings.Contains(rows[1], bgAccent+sBold+sWhite+"  1:") {
+	// The active tab is bold, in the base color on the accent.
+	if !strings.Contains(rows[1], bgAccent+sBold+sOnAccent+"  1:") {
 		t.Errorf("active tab not on the accent: %q", rows[1])
 	}
 	// The selected row is a bar across the whole list.
@@ -738,7 +750,7 @@ func TestJiraStyle(t *testing.T) {
 	if !strings.Contains(fancy, "╭") || !strings.Contains(safe, "┌") || strings.Contains(safe, "╭") {
 		t.Error("panel corners do not follow the icon set")
 	}
-	if !strings.Contains(fancy, bgOverlay) || !strings.Contains(fancy, bgAccent+sBold+sWhite+" Keybindings ") {
+	if !strings.Contains(fancy, bgOverlay) || !strings.Contains(fancy, bgAccent+sBold+sOnAccent+" Keybindings ") {
 		t.Error("panel lacks its background or title chip")
 	}
 }
@@ -996,5 +1008,59 @@ func TestOpensOnComments(t *testing.T) {
 	rows := m.View(100, 20)
 	if !strings.Contains(rows[5], "[Comments 2 new]") || !strings.HasPrefix(listRows(rows)[0], " New · 2") {
 		t.Errorf("first screen:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+func TestThemes(t *testing.T) {
+	defer UseTheme(DefaultTheme)
+	if err := UseTheme("dracula"); err == nil {
+		t.Error("unknown theme accepted")
+	}
+	// Every color that carries content reads well on the dark flavors'
+	// base (WCAG's 4.5:1); Overlay 1 and Surface 2 are only decoration.
+	for _, name := range []string{"frappe", "macchiato", "mocha"} {
+		f := themes[name]
+		for role, c := range map[string]string{"text": f.text, "subtext1": f.subtext1, "subtext0": f.subtext0,
+			"blue": f.blue, "sapphire": f.sapphire, "red": f.red, "green": f.green, "yellow": f.yellow,
+			"peach": f.peach, "mauve": f.mauve} {
+			if r := contrast(c, f.base); r < 4.5 {
+				t.Errorf("%s %s: contrast %.1f", name, role, r)
+			}
+		}
+		if r := contrast(f.text, f.surface1); r < 4.5 {
+			t.Errorf("%s: selected row contrast %.1f", name, r)
+		}
+	}
+	if err := UseTheme("mocha"); err != nil || sText != fg("cdd6f4") || bgSelect != bg("45475a") {
+		t.Errorf("mocha: %v %q", err, sText)
+	}
+}
+
+func TestLifecycleChip(t *testing.T) {
+	m, _ := newModel()
+	rows := m.View(100, 16)
+	if !strings.HasPrefix(rows[3], " [OPEN] org/repo#123  Fix lease renewal race") {
+		t.Errorf("open header = %q", rows[3])
+	}
+	keys(m, "3")
+	rows = m.View(100, 16)
+	if !strings.HasPrefix(rows[3], " [MERGED] osac/osac#58  Docs") || strings.Contains(rows[4], "merged") {
+		t.Errorf("merged header = %q / %q", rows[3], rows[4])
+	}
+	// Not fetched yet: no state to show.
+	s := snapshot()
+	s.Items[2].HeadSHA = ""
+	m.SetSnapshot(s)
+	if rows := m.View(100, 16); strings.Contains(rows[3], "[") {
+		t.Errorf("unfetched header = %q", rows[3])
+	}
+	// The chips' text (the base color) reads well on them.
+	for _, name := range []string{"frappe", "macchiato", "mocha"} {
+		f := themes[name]
+		for _, c := range []string{f.green, f.mauve, f.red} {
+			if r := contrast(f.base, c); r < 4.5 {
+				t.Errorf("%s chip %s: contrast %.1f", name, c, r)
+			}
+		}
 	}
 }

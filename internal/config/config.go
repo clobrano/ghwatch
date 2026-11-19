@@ -91,6 +91,9 @@ type Config struct {
 	// Icons is the icon set: "fancy" (Unicode symbols, the default) or
 	// "safe" (characters every common monospace font has).
 	Icons string
+	// Theme is the TUI's Catppuccin flavor: latte, frappe (the default),
+	// macchiato or mocha.
+	Theme string
 	// IgnoreAuthors are GitHub logins, lower case, whose comments are
 	// never new and never notify.
 	IgnoreAuthors []string
@@ -116,6 +119,7 @@ func Default() Config {
 		Notifier:       "desktop",
 		AutoStart:      true,
 		Icons:          "fancy",
+		Theme:          "frappe",
 		NotifyTimeout:  30 * time.Second,
 	}
 }
@@ -183,6 +187,15 @@ func Load(path string) (Config, error) {
 			cfg.IgnoreAuthors = nil
 			for _, a := range list {
 				cfg.IgnoreAuthors = append(cfg.IgnoreAuthors, strings.ToLower(strings.TrimSpace(a)))
+			}
+		case "theme", "ui.theme":
+			cfg.Theme, err = asString(v)
+			switch cfg.Theme {
+			case "latte", "frappe", "macchiato", "mocha":
+			default:
+				if err == nil {
+					err = fmt.Errorf("want a Catppuccin flavor: latte, frappe, macchiato or mocha")
+				}
 			}
 		case "autostart", "daemon.autostart":
 			b, ok := v.(bool)

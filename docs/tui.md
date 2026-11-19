@@ -1,8 +1,10 @@
 # The ghwatch TUI
 
-Run `ghwatch` to open it. The screen follows the style of
-[jira-tabbed-tui](https://github.com/clobrano/jira-tabbed-tui), from top to
-bottom:
+Run `ghwatch` to open it. Its colors are a
+[Catppuccin](https://catppuccin.com) flavor: Frappé by default, or the one
+set by `theme` in config.toml (`latte`, `frappe`, `macchiato` or `mocha`).
+ghwatch keeps the terminal's background, so pick the flavor that matches
+it. From top to bottom:
 
 - **Title bar:** the app name and how many PRs are watched and in which
   state (failed, running, passed, queued, merged or closed). It also shows
@@ -20,9 +22,13 @@ bottom:
   it got a new push, or it was merged or closed. Pressing any key while
   on its tab clears the mark, in every open TUI. A comment mark and a
   count show the PR's new comments; they clear the same way.
-- **PR header:** reference, title and author, then head commit, push
-  time, progress, failures and unresolved review threads. The PR's
-  labels show below as chips in their GitHub colors.
+- **PR header:** the PR's state first, as a chip like GitHub's (`OPEN`
+  green, `MERGED` mauve, `CLOSED` red), then reference, title and author;
+  below, head commit, push time, progress, failures and unresolved
+  review threads. The PR's
+  labels follow on a `labels:` line, each name in bold in its GitHub
+  color, lightened just enough to read on the background when GitHub's
+  color is too dark (darkened with the light flavor).
 - **List:** each PR has two lists, its comments and its jobs, and `v`
   switches between them. The box's top border names both, comments
   first, with the one shown highlighted and the number of new comments

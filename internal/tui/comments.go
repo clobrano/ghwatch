@@ -252,7 +252,7 @@ func (m *Model) commentsBody(w, rows int) []line {
 		if it.HeadSHA == "" {
 			return nil
 		}
-		return []line{{{" no comments fetched yet", sDim}}}
+		return []line{{{" no comments fetched yet", sSecondary}}}
 	}
 	readAt := m.readMark(it)
 	groups := make([]int, len(ts))
@@ -277,10 +277,10 @@ func (m *Model) commentsBody(w, rows int) []line {
 		_, spans := expand(p.thread)
 		from, to = 1+spans[p.comment][0], 1+spans[p.comment][1]
 	}
-	groupStyle := [...]string{sYellow, sAccent, sDim}
+	groupStyle := [...]string{sNew, sAccent, sSecondary}
 	return m.groupedRows("c\x00"+it.ID, groups, p.thread, from, to, rows,
 		func(g, n int) line {
-			return line{{" " + threadGroupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sDim}}
+			return line{{" " + threadGroupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sSecondary}}
 		},
 		func(i int) []line {
 			lines, _ := expand(i)
@@ -300,7 +300,7 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 	nameW := threadNameWidth(w)
 	marker, nameStyle := seg{" ", ""}, sText
 	if selected {
-		nameStyle = sBold + sWhite
+		nameStyle = sBold + sStrong
 		if !m.Color {
 			marker = seg{"›", ""}
 		}
@@ -308,9 +308,9 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 	ic := seg{commentMark(), sAccent}
 	switch {
 	case t.NewSince(readAt) > 0:
-		ic = seg{unseenMark, sBold + sYellow}
+		ic = seg{unseenMark, sBold + sNew}
 	case t.Resolved:
-		ic = seg{model.Passed.Icon(), sDim}
+		ic = seg{model.Passed.Icon(), sSecondary}
 	}
 	name := t.Name()
 	if t.Outdated {
@@ -321,9 +321,9 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 		cell = append(cell, seg{" " + bellIcon, bellStyle(it, sCyan)})
 	}
 	if n := t.NewSince(readAt); n > 0 {
-		cell = append(cell, seg{" " + strconv.Itoa(n) + " new", sYellow})
+		cell = append(cell, seg{" " + strconv.Itoa(n) + " new", sNew})
 	} else if t.Total > 0 {
-		cell = append(cell, seg{" · " + strconv.Itoa(t.Total), sDim})
+		cell = append(cell, seg{" · " + strconv.Itoa(t.Total), sSecondary})
 	}
 	when, author := "", ""
 	if c := t.Last(); c != nil {
@@ -333,7 +333,7 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 			cell = append(cell, seg{"  " + body, sSecondary})
 		}
 	} else {
-		cell = append(cell, seg{"  no comments yet", sDim})
+		cell = append(cell, seg{"  no comments yet", sSecondary})
 	}
 	l := append(line{marker, ic}, fill(cell, nameW+1, "")...)
 	l = append(l, seg{" " + padLeft(when, timeW), sMuted}, seg{"  " + padRight(author, authorW), sSecondary})
@@ -376,19 +376,19 @@ func (m *Model) toggleThread() {
 func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel int) (out []line, spans [][2]int) {
 	gutter := seg{"   │", sBorder}
 	if n := t.Total - len(t.Comments); n > 0 {
-		out = append(out, line{gutter, {"   ⋯ " + plural(n, "earlier comment") + " on GitHub", sDim}})
+		out = append(out, line{gutter, {"   ⋯ " + plural(n, "earlier comment") + " on GitHub", sSecondary}})
 	}
 	for i, c := range t.Comments {
 		start := len(out)
 		mark := seg{"   ", ""}
 		if c.Counts() && c.CreatedAt.After(readAt) {
-			mark = seg{" " + unseenMark + " ", sBold + sYellow}
+			mark = seg{" " + unseenMark + " ", sBold + sNew}
 		}
 		who := seg{c.Author, sText + sBold}
 		if c.Mine {
 			who.style = sMuted + sBold
 		}
-		head := line{gutter, mark, who, {" · " + human(m.now().Sub(c.CreatedAt)) + " ago", sDim}}
+		head := line{gutter, mark, who, {" · " + human(m.now().Sub(c.CreatedAt)) + " ago", sSecondary}}
 		if c.Review != "" && c.Review != "commented" {
 			head = append(head, seg{" · " + strings.ReplaceAll(c.Review, "_", " "), sAccent})
 		}
@@ -443,12 +443,12 @@ func (m *Model) findThreadsBody(w, rows int) []line {
 	it := m.current()
 	ts, matches := m.findThreads()
 	if len(matches) == 0 {
-		return []line{{{" no matching thread", sDim}}}
+		return []line{{{" no matching thread", sSecondary}}}
 	}
 	readAt := m.readMark(it)
 	sel := min(m.findSel, len(matches)-1)
 	m.findSel = sel
-	out := []line{{{" " + strconv.Itoa(len(matches)) + " of " + strconv.Itoa(len(ts)) + " threads match", sDim}}}
+	out := []line{{{" " + strconv.Itoa(len(matches)) + " of " + strconv.Itoa(len(ts)) + " threads match", sSecondary}}}
 	start := max(sel-(rows-1)+1, 0)
 	for n, idx := range matches[start:] {
 		if len(out) >= rows {

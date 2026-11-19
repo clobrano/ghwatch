@@ -38,14 +38,21 @@ can be swapped out.
 
 ## Other choices
 
-- **Look**: the TUI follows jira-tabbed-tui's style, so the two tools
-  look alike side by side. Both use a `#5555ff` accent and `N:name` tabs,
-  with the active tab bold white on the accent. Lists sit in a bordered
-  box with a column header, and the selected row is a full-width `#3333aa`
-  bar. Hints are dim grey, and messages bold green or red. Help and
-  settings open as centred panels with an accent border and a `#111111`
-  background. Colors are 24-bit; without colors (`NO_COLOR`) the active
-  tab is bracketed and the selected row keeps a `›` marker.
+- **Look**: the layout follows jira-tabbed-tui: `N:name` tabs, lists in a
+  bordered box with a column header, a full-width bar on the selected
+  row, help and settings as centred panels. The colors are Catppuccin's,
+  by role as its style guide suggests: Text and Subtext for content, Blue
+  for the accent, Red/Green/Yellow for states, Mauve for merged, Sapphire
+  for the merge queue, Peach for what is new, a Surface 1 bar for the
+  selection, and a Mantle background with a Lavender border for panels.
+  jira-tabbed-tui's own palette (`#555555` hints, `#5555ff` accent) was
+  made for a black background and fell below 2:1 contrast on a dark blue
+  one. Content is never drawn in Overlay or Surface colors, which are
+  for decoration only; a test keeps every content color at 4.5:1 or more
+  on the dark flavors' base. ghwatch does not paint the background, so
+  the flavor (`theme`, Frappé by default) should match the terminal's.
+  Colors are 24-bit; without colors (`NO_COLOR`) the active tab is
+  bracketed and the selected row keeps a `›` marker.
 
 - **Icon sets**: a terminal program can't ask whether a glyph will be drawn
   (a missing glyph still takes one cell), so the icons are a setting.

@@ -84,6 +84,11 @@ func (b *backend) Copy(text string) error { return browser.Copy(text, b.tty) }
 
 // Run shows the TUI until the user quits.
 func Run(ctx context.Context, opts Options) error {
+	if opts.Config.Theme != "" {
+		if err := UseTheme(opts.Config.Theme); err != nil {
+			return err
+		}
+	}
 	in, out := os.Stdin, os.Stdout
 	fd := int(in.Fd())
 	state, err := makeRaw(fd)

@@ -18,25 +18,32 @@ const (
 	sReverse = "\x1b[7m"
 )
 
+// Styles by role. UseTheme sets their colors.
 var (
-	sText      = fg("dddddd") // normal text
-	sWhite     = fg("ffffff") // emphasis: titles, selected rows
-	sMuted     = fg("aaaaaa") // inactive tabs, details
-	sSecondary = fg("888888") // secondary columns
-	sDim       = fg("555555") // hints, separators
-	sBorder    = fg("444444") // box and rule lines
-	sAccent    = fg("5555ff") // keys, PR reference, alerts
-	sRed       = fg("ff4444")
-	sGreen     = fg("00cc44")
-	sYellow    = fg("ffaa00") // running, stale
-	sBlue      = fg("5588ff") // merge queue
-	sMagenta   = fg("aa66ff") // merged
-	sCyan      = sAccent
+	sText        string // normal text
+	sStrong      string // emphasis: titles, selected rows (with bold)
+	sMuted       string // inactive tabs, details
+	sSecondary   string // secondary content: authors, sources, counts, quiet states
+	sDim         string // decoration only: separators, hints
+	sBorder      string // box and rule lines
+	sAccent      string // keys, PR reference, group headers
+	sCyan        string // bells
+	sPanelBorder string // help and settings panels
+	sRed         string // failed
+	sGreen       string // passed
+	sYellow      string // running, stale, warnings
+	sBlue        string // merge queue
+	sMagenta     string // merged
+	sNew         string // new comments, unseen changes
+	sOnAccent    string // text on bgAccent
 
-	bgAccent  = bg("5555ff") // active tab, title chips
-	bgSelect  = bg("3333aa") // selected row
-	bgSoft    = bg("222255") // selected row in panels
-	bgOverlay = bg("111111") // help and settings panels
+	bgAccent  string // active tab, title chips
+	bgSelect  string // selected row
+	bgSoft    string // selected row in panels
+	bgOverlay string // help and settings panels
+	bgGreen   string // open PR chip
+	bgMagenta string // merged PR chip
+	bgRed     string // closed PR chip
 )
 
 // fg and bg return 24-bit color escapes for a hex color.
