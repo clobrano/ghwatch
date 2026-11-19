@@ -545,34 +545,44 @@ func (m *Model) checksBody(w, rows int) []line {
 		func(g, n int) line {
 			return line{{" " + groupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sDim}}
 		},
-		func(i int) line { return m.checkRow(it, checks[i], i == sel, w, anyRequired) })
+		func(i int) []line { return []line{m.checkRow(it, checks[i], i == sel, w, anyRequired)} })
 }
 
 // groupedRows lays out a list whose entries are sorted by group: a header
 // row per non-empty group, then its entries, scrolled so the selected
 // entry is visible (with its group header when it is the first of its
-// group). topKey keeps the scroll position of this list between frames.
-func (m *Model) groupedRows(topKey string, groups []int, sel, rows int, header func(group, count int) line, entry func(i int) line) []line {
+// group). An entry is its row and, when expanded, lines below it, kept in
+// view with it as far as they fit. topKey keeps the scroll position of
+// this list between frames.
+func (m *Model) groupedRows(topKey string, groups []int, sel, rows int, header func(group, count int) line, entry func(i int) []line) []line {
 	type row struct {
 		entry int // index of the entry, or -1 for a group header
+		line  int // line of the entry
 		group int
 		count int
 	}
 	var list []row
-	selRow := 0
+	var lines [][]line
+	selRow, selEnd := 0, 0
 	for i, g := range groups {
 		if i == 0 || groups[i-1] != g {
 			list = append(list, row{entry: -1, group: g})
 		}
+		e := entry(i)
+		lines = append(lines, e)
 		if i == sel {
-			selRow = len(list)
+			selRow, selEnd = len(list), len(list)+len(e)-1
 		}
-		list = append(list, row{entry: i, group: g})
+		for k := range e {
+			list = append(list, row{entry: i, line: k, group: g})
+		}
 	}
 	for i := range list {
 		if list[i].entry < 0 {
 			for j := i + 1; j < len(list) && list[j].entry >= 0; j++ {
-				list[i].count++
+				if list[j].line == 0 {
+					list[i].count++
+				}
 			}
 		}
 	}
@@ -584,8 +594,8 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, rows int, header f
 	if first < top {
 		top = first
 	}
-	if selRow >= top+rows {
-		top = selRow - rows + 1
+	if selEnd >= top+rows {
+		top = min(selEnd-rows+1, selRow)
 	}
 	top = max(min(top, len(list)-rows), 0)
 	m.top[topKey] = top
@@ -599,7 +609,7 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, rows int, header f
 			out = append(out, header(r.group, r.count))
 			continue
 		}
-		out = append(out, entry(r.entry))
+		out = append(out, lines[r.entry][r.line])
 	}
 	return out
 }
@@ -764,6 +774,7 @@ var helpSections = []struct {
 		{"1 – 9", "jump to tab N"},
 		{"j / k, gg / G", "move between jobs or threads"},
 		{"v", "switch between checks and comments"},
+		{"e", "expand / fold a comment thread"},
 		{"/", "find a job or thread"},
 	}},
 	{"Links", [][2]string{
@@ -893,7 +904,7 @@ func (m *Model) footer(w int) line {
 
 // footerHints are the key hints of the footer, in display order. Each says
 // what the key does, in the checks list and, when it differs, in the
-// comments list; drop is the order in which they give way on narrow
+// comments list (a hint without a checks label is for comments only); drop is the order in which they give way on narrow
 // screens (higher first). "? all keys" always stays.
 var footerHints = []struct {
 	key, label, comments string
@@ -903,6 +914,7 @@ var footerHints = []struct {
 	{"j/k", "next/prev job", "next/prev thread", 4},
 	{"v", "comments", "checks", 5},
 	{"enter", "open job", "open comment", 1},
+	{"e", "", "expand", 11}, // comments only
 	{"o", "open PR", "", 2},
 	{"y/Y", "copy PR/job link", "copy PR/comment link", 9},
 	{"n", "alert PR", "", 6},
@@ -923,7 +935,7 @@ func hintLine(w, view int) line {
 		l := line{{"  ", ""}}
 		first := true
 		for i, h := range footerHints {
-			if !keep[i] {
+			if !keep[i] || h.label == "" && view != viewComments {
 				continue
 			}
 			if !first {

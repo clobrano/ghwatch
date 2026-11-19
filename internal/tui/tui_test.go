@@ -768,7 +768,7 @@ func TestFooterHints(t *testing.T) {
 	}
 	// The comments list names its own rows.
 	keys(m, "v")
-	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
+	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · e expand · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
 	if wide := m.View(240, 16)[15]; !strings.Contains(wide, want) {
 		t.Errorf("wide footer, comments = %q", wide)
 	}
@@ -918,5 +918,33 @@ func TestCommentsList(t *testing.T) {
 	keys(m, "v")
 	if !strings.HasPrefix(listRows(m.View(100, 20))[0], " Failed · 1") {
 		t.Error("v did not switch back to checks")
+	}
+}
+
+func TestExpandThread(t *testing.T) {
+	m, _ := newModel()
+	s := withComments(snapshot())
+	s.Items[0].Threads[1].Total = 4 // two older comments were not fetched
+	m.SetSnapshot(s)
+	keys(m, "e")
+	if !strings.Contains(m.View(100, 20)[19], "press v") {
+		t.Errorf("e in the checks list: footer %q", m.View(100, 20)[19])
+	}
+	keys(m, "v", "j", "e") // expand a.go:3
+	body := listRows(m.View(100, 22))
+	want := []string{" New · 2", " • conversation", "›• a.go:3 1 new", "   │   ⋯ 2 earlier comments on GitHub", "   │   me · 2h00m ago  about r1", "   │ • alice · 10m ago  about r2", " Open · 1"}
+	for i, prefix := range want {
+		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
+			t.Errorf("row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
+		}
+	}
+	// j moves to the next thread, past the comments.
+	keys(m, "j")
+	if _, th := m.selectedThread(); th.ID != "T3" {
+		t.Errorf("j selected %s", th.ID)
+	}
+	keys(m, "k", "e")
+	if body := listRows(m.View(100, 22)); strings.Contains(strings.Join(body, "\n"), "│") {
+		t.Errorf("folded thread still expanded:\n%s", strings.Join(body, "\n"))
 	}
 }

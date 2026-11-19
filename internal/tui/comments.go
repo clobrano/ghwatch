@@ -176,7 +176,13 @@ func (m *Model) commentsBody(w, rows int) []line {
 		func(g, n int) line {
 			return line{{" " + threadGroupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sDim}}
 		},
-		func(i int) line { return m.threadRow(it, ts[i], i == sel, w, readAt) })
+		func(i int) []line {
+			out := []line{m.threadRow(it, ts[i], i == sel, w, readAt)}
+			if m.expanded[it.ID+"\x00"+ts[i].ID] {
+				out = append(out, m.commentLines(ts[i], w, readAt)...)
+			}
+			return out
+		})
 }
 
 // Comment list columns: marker, icon, thread, time, author.
@@ -232,6 +238,51 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 		return withStyle(fill(l, w, ""), bgSelect+sBold)
 	}
 	return l
+}
+
+// toggleThread expands the selected thread to show each of its fetched
+// comments, or folds it back to its latest.
+func (m *Model) toggleThread() {
+	it, t := m.selectedThread()
+	if t == nil {
+		return
+	}
+	if m.expanded == nil {
+		m.expanded = map[string]bool{}
+	}
+	k := it.ID + "\x00" + t.ID
+	if m.expanded[k] {
+		delete(m.expanded, k)
+	} else {
+		m.expanded[k] = true
+	}
+}
+
+// commentLines are the lines of an expanded thread: one per fetched
+// comment, oldest first, each with its author, age and first line. New
+// comments carry the new mark.
+func (m *Model) commentLines(t model.Thread, w int, readAt time.Time) []line {
+	var out []line
+	if n := t.Total - len(t.Comments); n > 0 {
+		out = append(out, line{{"   │", sBorder}, {"   ⋯ " + plural(n, "earlier comment") + " on GitHub", sDim}})
+	}
+	for _, c := range t.Comments {
+		mark := seg{"   ", ""}
+		if c.Counts() && c.CreatedAt.After(readAt) {
+			mark = seg{" " + unseenMark + " ", sBold + sYellow}
+		}
+		who, style := c.Author, sText+sBold
+		if c.Mine {
+			style = sMuted
+		}
+		l := line{{"   │", sBorder}, mark, {who, style}, {" · " + human(m.now().Sub(c.CreatedAt)) + " ago", sDim}}
+		if c.Review != "" && c.Review != "commented" {
+			l = append(l, seg{" · " + strings.ReplaceAll(c.Review, "_", " "), sAccent})
+		}
+		l = append(l, seg{"  " + c.Body, sSecondary})
+		out = append(out, fill(l, w, ""))
+	}
+	return out
 }
 
 // findThreads returns the current tab's comment threads (as displayed) and

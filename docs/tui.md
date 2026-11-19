@@ -45,7 +45,9 @@ bottom:
   long ago and by whom it was written. Groups, top to bottom: **New**
   (threads with new comments, marked `•`), **Open**, and **Resolved**.
   Within a group, threads with a bell come first, then the conversation,
-  then the most recently commented.
+  then the most recently commented. `e` expands the selected thread:
+  each of its comments shows below it, oldest first, with its author,
+  age and first line, and new ones marked `•`. `e` again folds it.
 - **Footer:** what the main keys do (`h/l prev/next PR · j/k next/prev job
   · v comments · enter open job · …`), for the list shown, and the
   connection to the daemon.
@@ -67,6 +69,7 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `h` / `l`, `gT` / `gt` | previous / next tab |
 | `1`–`9` | jump to tab N |
 | `v` | switch between the checks and the comments |
+| `e` | expand the selected comment thread to all its comments, or fold it |
 | `/` | find a job, or a thread by file, author or text (ignores case); `enter` selects it |
 | `j` / `k`, `gg` / `G` | move between jobs or threads |
 | `enter` | open the selected job's page, or the thread's latest comment |
@@ -102,8 +105,10 @@ poll make a single notification. `m` and `c` mute and clear thread bells
 together with the rest.
 
 ghwatch fetches the last 20 overview comments and reviews, and the last
-50 review threads with their last 5 comments each. Counts of new
-comments are within those.
+50 review threads with their last 5 comments each, keeping the first line
+of each comment. Counts of new comments are within those, and an
+expanded thread says how many earlier comments are only on GitHub:
+`enter` opens the thread there.
 
 ## Merge queue
 

@@ -80,6 +80,9 @@ type Model struct {
 	// view is the list shown: viewChecks or viewComments.
 	view int
 	csel map[string]selection // selected comment thread per item
+	// expanded holds the threads (item ID, NUL, thread ID) showing all
+	// their comments.
+	expanded map[string]bool
 	// readSent holds, per item, the latest comment this client already
 	// marked read, so it asks the daemon once per change.
 	readSent map[string]time.Time
@@ -377,6 +380,12 @@ func (m *Model) keyNormal(k string) {
 		m.move(-1 << 20)
 	case "v":
 		m.view = 1 - m.view
+	case "e":
+		if m.view == viewComments {
+			m.toggleThread()
+		} else {
+			m.setFlash("e expands a comment thread: press v to see them", true)
+		}
 	case kEnter:
 		if m.view == viewComments {
 			if _, t := m.selectedThread(); t != nil {
