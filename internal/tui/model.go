@@ -90,6 +90,8 @@ type Model struct {
 	// with J/K, in lines.
 	cscroll    int
 	cscrollKey string
+	// helpPage is the help panel's page: 0 keys, 1 legend.
+	helpPage int
 	// expanded holds the threads (item ID, NUL, thread ID) showing all
 	// their comments.
 	expanded map[string]bool
@@ -352,7 +354,13 @@ func (m *Model) Key(k string) {
 	case modeEvents:
 		m.keyEvents(k)
 	case modeHelp:
-		m.mode = modeNormal
+		// tab flips between the keys and the legend; any other key closes.
+		switch k {
+		case kTab, kShiftTab, kLeft, kRight, "h", "l":
+			m.helpPage = 1 - m.helpPage
+		default:
+			m.mode = modeNormal
+		}
 	case modeConfirm:
 		m.mode = modeNormal
 		if k == "y" || k == "Y" {
@@ -502,7 +510,7 @@ func (m *Model) keyNormal(k string) {
 	case "/":
 		m.mode, m.input, m.findSel = modeFind, nil, 0
 	case "?":
-		m.mode = modeHelp
+		m.mode, m.helpPage = modeHelp, 0
 	}
 }
 

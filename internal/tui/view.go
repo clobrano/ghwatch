@@ -68,7 +68,7 @@ func (m *Model) lines(w, h int) []line {
 	}
 	switch m.mode {
 	case modeHelp:
-		return overlay(w, h, "Keybindings", m.helpContent(w, h))
+		return m.helpPanel(w, h)
 	case modeEvents:
 		return overlay(w, h, "Notifications", m.eventsContent())
 	}
@@ -719,7 +719,12 @@ func (m *Model) findBody(w, rows int) []line {
 // jira-tabbed-tui's keybindings panel: an accent border, a dark background
 // and a title chip.
 func overlay(w, h int, title string, content []line) []line {
-	body := []line{{{" " + title + " ", bgAccent + sBold + sOnAccent}}, {}}
+	return overlayTitled(w, h, line{{" " + title + " ", bgAccent + sBold + sOnAccent}}, content)
+}
+
+// overlayTitled is overlay with a title line of its own, e.g. page tabs.
+func overlayTitled(w, h int, title line, content []line) []line {
+	body := []line{title, {}}
 	body = append(body, content...)
 	inner := 0
 	for _, l := range body {
@@ -783,56 +788,117 @@ func (m *Model) eventsContent() []line {
 }
 
 // helpSections groups the keys like jira-tabbed-tui's help panel.
-var helpSections = []struct {
+// helpEntry is a line of the help panel: a key (or icon) and what it
+// does (or means), with the key's style when it is not a key's.
+type helpEntry struct{ key, desc, style string }
+
+type helpSection struct {
 	title string
-	keys  [][2]string
-}{
-	{"Navigation", [][2]string{
-		{"h / l, gT / gt", "previous / next tab"},
-		{"1 – 9", "jump to tab N"},
-		{"j / k, gg / G", "move between jobs or threads"},
-		{"v", "switch between checks and comments"},
-		{"/", "find a job or thread"},
+	keys  []helpEntry
+}
+
+var helpSections = []helpSection{
+	{"Navigation", []helpEntry{
+		{"h / l, gT / gt", "previous / next tab", ""},
+		{"1 – 9", "jump to tab N", ""},
+		{"j / k, gg / G", "move between jobs or threads", ""},
+		{"v", "switch between checks and comments", ""},
+		{"/", "find a job or thread", ""},
 	}},
-	{"Comments", [][2]string{
-		{"e", "expand / fold a thread"},
-		{"J / K", "scroll a long comment"},
-		{"r", "reply (on the conversation: comment)"},
-		{"R", "resolve / unresolve a thread"},
+	{"Comments", []helpEntry{
+		{"e", "expand / fold a thread", ""},
+		{"J / K", "scroll a long comment", ""},
+		{"r", "reply, or comment on the PR", ""},
+		{"R", "resolve / unresolve a thread", ""},
 	}},
-	{"Links", [][2]string{
-		{"enter", "open the job or comment page"},
-		{"o", "open the PR page"},
-		{"y / Y", "copy PR / job or comment URL"},
+	{"Links", []helpEntry{
+		{"enter", "open the job or comment page", ""},
+		{"o", "open the PR page", ""},
+		{"y / Y", "copy PR / job or comment URL", ""},
 	}},
-	{"Notifications", [][2]string{
-		{"n", "alerts for this PR"},
-		{"b", "alerts for this job or thread"},
-		{"m", "mute / restore this PR's alerts"},
-		{"c", "clear all of this PR's alerts"},
-		{"N", "alert settings, mute all"},
+	{"Notifications", []helpEntry{
+		{"n", "alerts for this PR", ""},
+		{"b", "alerts for this job or thread", ""},
+		{"m", "mute / restore this PR's alerts", ""},
+		{"c", "clear all of this PR's alerts", ""},
+		{"N", "alert settings, mute all", ""},
 	}},
-	{"Pull requests", [][2]string{
-		{"a", "add a PR"},
-		{"d", "unwatch this PR"},
-		{"p", "poll now"},
-		{"R", "re-run failed CI (checks list)"},
+	{"Pull requests", []helpEntry{
+		{"a", "add a PR", ""},
+		{"d", "unwatch this PR", ""},
+		{"p", "poll now", ""},
+		{"R", "re-run failed CI (checks list)", ""},
 	}},
-	{"Other", [][2]string{
-		{"? / esc", "close this panel"},
-		{"q", "quit this TUI"},
+	{"Other", []helpEntry{
+		{"tab", "legend: what icons and marks mean", ""},
+		{"? / esc", "close this panel", ""},
+		{"q", "quit this TUI", ""},
 	}},
+}
+
+// helpPanel is the help panel: the keys, or (tab) the legend.
+func (m *Model) helpPanel(w, h int) []line {
+	chip := func(name string, on bool) seg {
+		switch {
+		case on && m.Color:
+			return seg{" " + name + " ", bgAccent + sBold + sOnAccent}
+		case on:
+			return seg{"[" + name + "]", ""}
+		}
+		return seg{" " + name + " ", sMuted}
+	}
+	title := line{chip("Keybindings", m.helpPage == 0), {" ", ""}, chip("Legend", m.helpPage == 1), {"   tab switches", sDim}}
+	return overlayTitled(w, h, title, m.helpContent(w, h))
+}
+
+// legend is the help panel's second page: what the icons and marks mean,
+// drawn as they are on screen.
+func (m *Model) legend() []helpSection {
+	state := func(st model.State, desc string) helpEntry {
+		return helpEntry{st.Icon(), desc, stateStyle(st) + sBold}
+	}
+	legend := []helpSection{
+		{"States", []helpEntry{
+			state(model.Failed, "failed"),
+			state(model.Running, "running"),
+			state(model.Pending, "pending"),
+			state(model.Passed, "passed"),
+			state(model.Skipped, "skipped"),
+			state(model.Cancelled, "cancelled"),
+			state(model.Queued, "in the merge queue"),
+			state(model.Merged, "merged"),
+			state(model.Closed, "closed"),
+			{"tab icon", "state of the required checks", sBold + sMuted},
+		}},
+		{"Marks", []helpEntry{
+			{unseenMark, "PR changed, or new comment", sBold + sNew},
+			{commentMark() + " 3", "new comments on the PR", sBold + sNew},
+			{bellIcon, "alerts on (grey while muted)", sBold + sCyan},
+			{"opt", "job not required to merge", sSecondary},
+			{model.Passed.Icon(), "resolved comment thread", sSecondary},
+			{"OPEN", "PR state; also MERGED, CLOSED", sBold + sGreen},
+		}},
+	}
+	return legend
 }
 
 // helpContent lays the help sections out in as few columns as fit the
 // screen height.
 func (m *Model) helpContent(w, h int) []line {
 	const keyW, gap = 16, 3
+	sections := helpSections
+	if m.helpPage == 1 {
+		sections = m.legend()
+	}
 	section := func(i int, descW int) []line {
-		sec := helpSections[i]
+		sec := sections[i]
 		out := []line{{{sec.title, sBold + sMuted}}}
 		for _, k := range sec.keys {
-			out = append(out, line{{padRight(k[0], keyW), sBold + sAccent}, {truncate(k[1], descW), sText}})
+			style := k.style
+			if style == "" {
+				style = sBold + sAccent
+			}
+			out = append(out, line{{padRight(k.key, keyW), style}, {truncate(k.desc, descW), sText}})
 		}
 		return out
 	}
@@ -844,11 +910,11 @@ func (m *Model) helpContent(w, h int) []line {
 		var columns [][]line
 		var cur []line
 		total := 0
-		for i := range helpSections {
-			total += len(helpSections[i].keys) + 2
+		for i := range sections {
+			total += len(sections[i].keys) + 2
 		}
 		target := (total + cols - 1) / cols
-		for i := range helpSections {
+		for i := range sections {
 			s := section(i, descW)
 			if len(cur) > 0 && len(cur)+1+len(s) > target && len(columns) < cols-1 {
 				columns = append(columns, cur)

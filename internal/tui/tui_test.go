@@ -325,7 +325,7 @@ func TestHelpFitsInColumns(t *testing.T) {
 	m, _ := newModel()
 	keys(m, "?")
 	screen := strings.Join(m.View(120, 40), "\n")
-	if !strings.Contains(screen, " Keybindings ") {
+	if !strings.Contains(screen, "[Keybindings]") {
 		t.Errorf("no title chip:\n%s", screen)
 	}
 	for _, sec := range helpSections {
@@ -333,8 +333,8 @@ func TestHelpFitsInColumns(t *testing.T) {
 			t.Errorf("help lacks section %q", sec.title)
 		}
 		for _, r := range sec.keys {
-			if !strings.Contains(screen, r[1]) {
-				t.Errorf("help lacks %q:\n%s", r[1], screen)
+			if !strings.Contains(screen, r.desc) {
+				t.Errorf("help lacks %q:\n%s", r.desc, screen)
 			}
 		}
 	}
@@ -1216,5 +1216,38 @@ func TestScrollComment(t *testing.T) {
 	keys(m, "g", "g", "J")
 	if m.cscroll != 0 {
 		t.Errorf("J on a thread scrolled to %d", m.cscroll)
+	}
+}
+
+func TestLegend(t *testing.T) {
+	m, _ := newModel()
+	keys(m, "?")
+	if screen := strings.Join(m.View(100, 30), "\n"); !strings.Contains(screen, "[Keybindings]") || strings.Contains(screen, "Marks") {
+		t.Fatalf("first page:\n%s", screen)
+	}
+	keys(m, kTab)
+	screen := strings.Join(m.View(100, 30), "\n")
+	if !strings.Contains(screen, "[Legend]") || m.mode != modeHelp {
+		t.Fatalf("tab did not show the legend:\n%s", screen)
+	}
+	// Every icon and mark, with its meaning, in full.
+	for _, sec := range m.legend() {
+		for _, e := range sec.keys {
+			if !strings.Contains(screen, e.key) || !strings.Contains(screen, e.desc) {
+				t.Errorf("legend lacks %q %q:\n%s", e.key, e.desc, screen)
+			}
+		}
+	}
+	keys(m, kTab)
+	if !strings.Contains(strings.Join(m.View(100, 30), "\n"), "Navigation") {
+		t.Error("tab did not go back to the keys")
+	}
+	keys(m, "x")
+	if m.mode != modeNormal {
+		t.Error("any other key should close the panel")
+	}
+	keys(m, "?")
+	if m.helpPage != 0 {
+		t.Error("? should open on the keys")
 	}
 }

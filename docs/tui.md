@@ -64,7 +64,10 @@ it. From top to bottom:
   `? all keys` always stays. Messages replace the hints for a few
   seconds.
 
-`?` opens the full list of keys in a panel, grouped by topic, and `N`
+`?` opens the full list of keys in a panel, grouped by topic; `tab`
+switches it to the legend, which shows every state icon and mark and
+what it means (a tab's icon is the state of the PR's required checks,
+or of all checks when none is required). `N`
 opens the notification settings the same way.
 
 Links open where GitHub's PR page points: a GitHub Actions job opens its
@@ -96,7 +99,7 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `a` | add a PR |
 | `d` | unwatch the current PR (in every client) |
 | `p` | ask the daemon to poll now |
-| `?` | all keys (`?` or `esc` closes it) |
+| `?` | all keys; `tab` there shows the legend of icons and marks (`?` or `esc` closes it) |
 | `q` | quit this TUI (the daemon keeps running) |
 
 ## Comments

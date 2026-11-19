@@ -27,7 +27,7 @@ The keys you need day to day:
 | `r` / `R` | reply in a comment thread / resolve it |
 | `o` | open the PR in the browser |
 | `a` / `d` | add / remove a PR |
-| `?` | all the other keys |
+| `?` | all the other keys, and (`tab`) what the icons mean |
 | `q` | quit |
 
 The footer always shows the main keys. [docs/tui.md](docs/tui.md) describes
