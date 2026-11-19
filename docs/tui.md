@@ -46,8 +46,11 @@ bottom:
   (threads with new comments, marked `•`), **Open**, and **Resolved**.
   Within a group, threads with a bell come first, then the conversation,
   then the most recently commented. `e` expands the selected thread:
-  each of its comments shows below it, oldest first, with its author,
-  age and first line, and new ones marked `•`. `e` again folds it.
+  each of its comments shows below it in full, oldest first, with its
+  author, age and review state, and new ones marked `•`. While a thread
+  is expanded, `j`/`k` step through its comments, and `enter`, `Y` open
+  or copy the selected comment; folded, they move from thread to thread.
+  `e` again folds it.
 - **Footer:** what the main keys do (`h/l prev/next PR · j/k next/prev job
   · v comments · enter open job · …`), for the list shown, and the
   connection to the daemon.
@@ -71,8 +74,8 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `v` | switch between the checks and the comments |
 | `e` | expand the selected comment thread to all its comments, or fold it |
 | `/` | find a job, or a thread by file, author or text (ignores case); `enter` selects it |
-| `j` / `k`, `gg` / `G` | move between jobs or threads |
-| `enter` | open the selected job's page, or the thread's latest comment |
+| `j` / `k`, `gg` / `G` | move between jobs, threads, or the comments of an expanded thread |
+| `enter` | open the selected job's page, or the selected comment (a thread's latest) |
 | `o` | open the PR page |
 | `y` | copy the PR's URL |
 | `Y` | copy the selected job's or comment's URL |
@@ -105,10 +108,11 @@ poll make a single notification. `m` and `c` mute and clear thread bells
 together with the rest.
 
 ghwatch fetches the last 20 overview comments and reviews, and the last
-50 review threads with their last 5 comments each, keeping the first line
-of each comment. Counts of new comments are within those, and an
-expanded thread says how many earlier comments are only on GitHub:
-`enter` opens the thread there.
+50 review threads with their last 5 comments each, keeping up to 4,000
+characters of each comment. Counts of new comments are within those, and
+an expanded thread says how many earlier comments are only on GitHub:
+`enter` opens the thread there. The list shows as much of a long comment
+as fits the screen; `enter` opens the rest.
 
 ## Merge queue
 

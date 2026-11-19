@@ -185,7 +185,11 @@ func FormatComments(ts []model.Transition, it model.Item) Notification {
 			what = strings.ReplaceAll(c.Review, "_", " ")
 		}
 		n.Title = c.Author + " " + what
-		n.Body = c.Body + "\n" + ref
+		summary := c.Summary()
+		if r := []rune(summary); len(r) > 200 {
+			summary = string(r[:199]) + "…"
+		}
+		n.Body = summary + "\n" + ref
 		if c.URL != "" {
 			n.URL = c.URL
 		}

@@ -351,9 +351,15 @@ func TestThreads(t *testing.T) {
 		got = append(got, c.ID+"/"+c.Author+"/"+c.Body)
 	}
 	// Oldest first; the empty "commented" review and the pending one are left out.
-	want := "IC2/ghost/from a deleted account R1/bob/approved IC1/openshift-ci-robot//retest"
+	want := "IC2/ghost/from a deleted account R1/bob/approved IC1/openshift-ci-robot//retest\nmore"
 	if strings.Join(got, " ") != want || conv.Total != 32 || conv.Name() != "conversation" {
 		t.Errorf("conversation = %v (total %d), want %s", got, conv.Total, want)
+	}
+	if conv.Comments[2].Summary() != "/retest" {
+		t.Errorf("summary = %q", conv.Comments[2].Summary())
+	}
+	if long := text(strings.Repeat("x", model.BodyLimit+10)); len([]rune(long)) != model.BodyLimit {
+		t.Errorf("long comment kept %d characters", len([]rune(long)))
 	}
 	if conv.Comments[1].Review != "approved" {
 		t.Errorf("review state = %q", conv.Comments[1].Review)

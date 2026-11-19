@@ -57,7 +57,7 @@ changing the meaning of a field bumps `schema`.
       "comments": [{           // the latest ones, oldest first
         "id": "IC_…",
         "author": "alice",
-        "body": "Shouldn't this…", // first line, at most 200 characters
+        "body": "Shouldn't this…", // the text, as plain text, at most 4000 characters
         "created_at": "…",
         "url": "https://…",
         "review": "approved",  // review summaries: approved | changes_requested | commented | dismissed

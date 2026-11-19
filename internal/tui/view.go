@@ -541,7 +541,7 @@ func (m *Model) checksBody(w, rows int) []line {
 		groups[i] = checkGroup(c.State)
 	}
 	groupStyle := [...]string{sBlue, sRed, sYellow, sGreen, sDim}
-	return m.groupedRows(it.ID, groups, sel, rows,
+	return m.groupedRows(it.ID, groups, sel, 0, -1, rows,
 		func(g, n int) line {
 			return line{{" " + groupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sDim}}
 		},
@@ -551,10 +551,11 @@ func (m *Model) checksBody(w, rows int) []line {
 // groupedRows lays out a list whose entries are sorted by group: a header
 // row per non-empty group, then its entries, scrolled so the selected
 // entry is visible (with its group header when it is the first of its
-// group). An entry is its row and, when expanded, lines below it, kept in
-// view with it as far as they fit. topKey keeps the scroll position of
+// group). An entry is its row and, when expanded, lines below it. Lines
+// from to to (-1: the last) of the selected entry are kept in view, as
+// far as they fit, from the first. topKey keeps the scroll position of
 // this list between frames.
-func (m *Model) groupedRows(topKey string, groups []int, sel, rows int, header func(group, count int) line, entry func(i int) []line) []line {
+func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int, header func(group, count int) line, entry func(i int) []line) []line {
 	type row struct {
 		entry int // index of the entry, or -1 for a group header
 		line  int // line of the entry
@@ -571,7 +572,11 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, rows int, header f
 		e := entry(i)
 		lines = append(lines, e)
 		if i == sel {
-			selRow, selEnd = len(list), len(list)+len(e)-1
+			last := len(e) - 1
+			if to >= 0 {
+				last = min(to, last)
+			}
+			selRow, selEnd = len(list)+min(from, last), len(list)+last
 		}
 		for k := range e {
 			list = append(list, row{entry: i, line: k, group: g})
@@ -588,7 +593,7 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, rows int, header f
 	}
 	top := m.top[topKey]
 	first := selRow
-	if first > 0 && list[first-1].entry < 0 {
+	if first > 0 && list[first-1].entry < 0 && list[first].line == 0 {
 		first--
 	}
 	if first < top {

@@ -96,31 +96,112 @@ func (m *Model) threads(it *model.Item) []model.Thread {
 	return out
 }
 
-func (m *Model) selectedThread() (*model.Item, *model.Thread) {
-	it := m.current()
-	if it == nil {
-		return nil, nil
-	}
-	ts := m.threads(it)
-	if len(ts) == 0 {
-		return it, nil
-	}
-	return it, &ts[m.threadIndex(it.ID, ts)]
+// cpos is a selectable row of the comments list: a thread, or one of the
+// comments of an expanded thread.
+type cpos struct {
+	thread  int // index in the displayed threads
+	comment int // index in the thread's comments; -1 for the thread's row
 }
 
-// threadIndex returns the index of the selected thread in ts.
-func (m *Model) threadIndex(id string, ts []model.Thread) int {
-	s := m.csel[id]
-	if s.key != "" {
-		for i, t := range ts {
-			if t.ID == s.key {
-				return i
+func (m *Model) isExpanded(it *model.Item, t model.Thread) bool {
+	return m.expanded[it.ID+"\x00"+t.ID]
+}
+
+// positions lists the selectable rows of the comments list, in order.
+func (m *Model) positions(it *model.Item, ts []model.Thread) []cpos {
+	var out []cpos
+	for i, t := range ts {
+		out = append(out, cpos{i, -1})
+		if m.isExpanded(it, t) {
+			for j := range t.Comments {
+				out = append(out, cpos{i, j})
 			}
 		}
 	}
-	return min(max(s.idx, 0), len(ts)-1)
+	return out
 }
 
+// posKey identifies a row across refreshes: its thread's ID, plus the
+// comment's ID for a comment.
+func posKey(ts []model.Thread, p cpos) string {
+	if p.comment < 0 {
+		return ts[p.thread].ID
+	}
+	return ts[p.thread].ID + "\x00" + ts[p.thread].Comments[p.comment].ID
+}
+
+// selPos returns the selected row of the comments list. A selected
+// comment that is gone, or whose thread was folded, falls back to its
+// thread.
+func (m *Model) selPos(it *model.Item, ts []model.Thread) cpos {
+	ps := m.positions(it, ts)
+	s := m.csel[it.ID]
+	if s.key != "" {
+		for _, p := range ps {
+			if posKey(ts, p) == s.key {
+				return p
+			}
+		}
+		thread, _, _ := strings.Cut(s.key, "\x00")
+		for _, p := range ps {
+			if p.comment < 0 && ts[p.thread].ID == thread {
+				return p
+			}
+		}
+	}
+	return ps[min(max(s.idx, 0), len(ps)-1)]
+}
+
+// selectedComment returns the selected thread, and the selected comment
+// when a comment of an expanded thread is selected rather than the thread.
+func (m *Model) selectedComment() (*model.Item, *model.Thread, *model.Comment) {
+	it := m.current()
+	if it == nil {
+		return nil, nil, nil
+	}
+	ts := m.threads(it)
+	if len(ts) == 0 {
+		return it, nil, nil
+	}
+	p := m.selPos(it, ts)
+	t := &ts[p.thread]
+	if p.comment < 0 {
+		return it, t, nil
+	}
+	return it, t, &t.Comments[p.comment]
+}
+
+func (m *Model) selectedThread() (*model.Item, *model.Thread) {
+	it, t, _ := m.selectedComment()
+	return it, t
+}
+
+// selectedLink is where enter and Y go: the selected comment, or the
+// selected thread's latest.
+func (m *Model) selectedLink() string {
+	_, t, c := m.selectedComment()
+	switch {
+	case c != nil && c.URL != "":
+		return c.URL
+	case t != nil:
+		return t.Link()
+	}
+	return ""
+}
+
+// selectThread selects the thread with index i in the displayed list.
+func (m *Model) selectThread(it *model.Item, ts []model.Thread, i int) {
+	ps := m.positions(it, ts)
+	for n, p := range ps {
+		if p.thread == i && p.comment < 0 {
+			m.csel[it.ID] = selection{key: ts[i].ID, idx: n}
+			return
+		}
+	}
+}
+
+// moveThread moves the selection by delta rows: from thread to thread,
+// through the comments of expanded threads.
 func (m *Model) moveThread(delta int) {
 	it := m.current()
 	if it == nil {
@@ -130,8 +211,16 @@ func (m *Model) moveThread(delta int) {
 	if len(ts) == 0 {
 		return
 	}
-	i := min(max(m.threadIndex(it.ID, ts)+delta, 0), len(ts)-1)
-	m.csel[it.ID] = selection{key: ts[i].ID, idx: i}
+	ps := m.positions(it, ts)
+	cur := m.selPos(it, ts)
+	i := 0
+	for n, p := range ps {
+		if p == cur {
+			i = n
+		}
+	}
+	i = min(max(i+delta, 0), len(ps)-1)
+	m.csel[it.ID] = selection{key: posKey(ts, ps[i]), idx: i}
 }
 
 // markRead tells the daemon the user saw the active PR's comments: any
@@ -170,18 +259,32 @@ func (m *Model) commentsBody(w, rows int) []line {
 	for i, t := range ts {
 		groups[i] = threadGroup(t, readAt)
 	}
-	sel := m.threadIndex(it.ID, ts)
+	p := m.selPos(it, ts)
+	// The selected thread stays in view with as much of its comments as
+	// fits; a selected comment stays in view whole, as far as it fits.
+	from, to := 0, -1
+	expand := func(i int) ([]line, [][2]int) {
+		if !m.isExpanded(it, ts[i]) {
+			return nil, nil
+		}
+		sel := -1
+		if i == p.thread {
+			sel = p.comment
+		}
+		return m.commentLines(ts[i], w, readAt, sel)
+	}
+	if p.comment >= 0 {
+		_, spans := expand(p.thread)
+		from, to = 1+spans[p.comment][0], 1+spans[p.comment][1]
+	}
 	groupStyle := [...]string{sYellow, sAccent, sDim}
-	return m.groupedRows("c\x00"+it.ID, groups, sel, rows,
+	return m.groupedRows("c\x00"+it.ID, groups, p.thread, from, to, rows,
 		func(g, n int) line {
 			return line{{" " + threadGroupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sDim}}
 		},
 		func(i int) []line {
-			out := []line{m.threadRow(it, ts[i], i == sel, w, readAt)}
-			if m.expanded[it.ID+"\x00"+ts[i].ID] {
-				out = append(out, m.commentLines(ts[i], w, readAt)...)
-			}
-			return out
+			lines, _ := expand(i)
+			return append([]line{m.threadRow(it, ts[i], i == p.thread && p.comment < 0, w, readAt)}, lines...)
 		})
 }
 
@@ -226,7 +329,7 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 	if c := t.Last(); c != nil {
 		when = human(m.now().Sub(c.CreatedAt)) + " ago"
 		author = c.Author
-		if body := strings.TrimSpace(c.Body); body != "" {
+		if body := c.Summary(); body != "" {
 			cell = append(cell, seg{"  " + body, sSecondary})
 		}
 	} else {
@@ -241,7 +344,8 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 }
 
 // toggleThread expands the selected thread to show each of its fetched
-// comments, or folds it back to its latest.
+// comments in full, or folds it back to its latest; folding from one of
+// its comments selects the thread.
 func (m *Model) toggleThread() {
 	it, t := m.selectedThread()
 	if t == nil {
@@ -253,36 +357,55 @@ func (m *Model) toggleThread() {
 	k := it.ID + "\x00" + t.ID
 	if m.expanded[k] {
 		delete(m.expanded, k)
+		ts := m.threads(it)
+		for i := range ts {
+			if ts[i].ID == t.ID {
+				m.selectThread(it, ts, i)
+			}
+		}
 	} else {
 		m.expanded[k] = true
 	}
 }
 
-// commentLines are the lines of an expanded thread: one per fetched
-// comment, oldest first, each with its author, age and first line. New
-// comments carry the new mark.
-func (m *Model) commentLines(t model.Thread, w int, readAt time.Time) []line {
-	var out []line
+// commentLines are the lines of an expanded thread, oldest comment
+// first: for each, a line with its author, age and review state, then its
+// text, wrapped. New comments carry the new mark, and the selected one
+// (sel, or -1) is highlighted. spans gives each comment's first and last
+// line.
+func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel int) (out []line, spans [][2]int) {
+	gutter := seg{"   │", sBorder}
 	if n := t.Total - len(t.Comments); n > 0 {
-		out = append(out, line{{"   │", sBorder}, {"   ⋯ " + plural(n, "earlier comment") + " on GitHub", sDim}})
+		out = append(out, line{gutter, {"   ⋯ " + plural(n, "earlier comment") + " on GitHub", sDim}})
 	}
-	for _, c := range t.Comments {
+	for i, c := range t.Comments {
+		start := len(out)
 		mark := seg{"   ", ""}
 		if c.Counts() && c.CreatedAt.After(readAt) {
 			mark = seg{" " + unseenMark + " ", sBold + sYellow}
 		}
-		who, style := c.Author, sText+sBold
+		who := seg{c.Author, sText + sBold}
 		if c.Mine {
-			style = sMuted
+			who.style = sMuted + sBold
 		}
-		l := line{{"   │", sBorder}, mark, {who, style}, {" · " + human(m.now().Sub(c.CreatedAt)) + " ago", sDim}}
+		head := line{gutter, mark, who, {" · " + human(m.now().Sub(c.CreatedAt)) + " ago", sDim}}
 		if c.Review != "" && c.Review != "commented" {
-			l = append(l, seg{" · " + strings.ReplaceAll(c.Review, "_", " "), sAccent})
+			head = append(head, seg{" · " + strings.ReplaceAll(c.Review, "_", " "), sAccent})
 		}
-		l = append(l, seg{"  " + c.Body, sSecondary})
-		out = append(out, fill(l, w, ""))
+		if i == sel {
+			if m.Color {
+				head = withStyle(fill(head, w, ""), bgSelect+sBold)
+			} else {
+				head[0] = seg{"   ›", ""}
+			}
+		}
+		out = append(out, head)
+		for _, l := range wrap(c.Body, w-9) {
+			out = append(out, line{gutter, {"     " + l, sText}})
+		}
+		spans = append(spans, [2]int{start, len(out) - 1})
 	}
-	return out
+	return out, spans
 }
 
 // findThreads returns the current tab's comment threads (as displayed) and

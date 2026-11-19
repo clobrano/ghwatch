@@ -326,7 +326,7 @@ type commentNode struct {
 }
 
 func (c commentNode) toComment() model.Comment {
-	out := model.Comment{ID: c.ID, Body: snippet(c.BodyText), URL: c.URL, Mine: c.ViewerDidAuthor}
+	out := model.Comment{ID: c.ID, Body: text(c.BodyText), URL: c.URL, Mine: c.ViewerDidAuthor}
 	if c.Author != nil {
 		out.Author = c.Author.Login
 	} else {
@@ -347,21 +347,14 @@ func (c commentNode) toComment() model.Comment {
 	return out
 }
 
-// snippetLen caps a comment's stored text: enough for a list row or a
-// notification, small enough to keep the snapshot light.
-const snippetLen = 200
-
-// snippet is the first non-empty line of a comment, shortened.
-func snippet(body string) string {
-	for _, l := range strings.Split(body, "\n") {
-		if l = strings.TrimSpace(l); l != "" {
-			if r := []rune(l); len(r) > snippetLen {
-				return string(r[:snippetLen-1]) + "…"
-			}
-			return l
-		}
+// text is a comment's text without surrounding blank space, cut at
+// model.BodyLimit characters.
+func text(body string) string {
+	body = strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n"))
+	if r := []rune(body); len(r) > model.BodyLimit {
+		return string(r[:model.BodyLimit-1]) + "…"
 	}
-	return ""
+	return body
 }
 
 // threads returns the pull request's conversation, then its review

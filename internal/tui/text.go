@@ -244,3 +244,65 @@ func box(content []line, w int, borderStyle, fillStyle string, rounded bool) []l
 // rounded reports whether boxes may use rounded corners: only with the
 // fancy icon set, since several fonts lack them.
 func rounded() bool { return model.IconSet() == "fancy" }
+
+// wrap breaks text into lines of at most w cells, at spaces where it can.
+// Each line of the text keeps its indentation; runs of blank lines become
+// one.
+func wrap(text string, w int) []string {
+	w = max(w, 8)
+	var out []string
+	for _, para := range strings.Split(text, "\n") {
+		para = strings.TrimRight(para, " \t")
+		if para == "" {
+			if len(out) > 0 && out[len(out)-1] != "" {
+				out = append(out, "")
+			}
+			continue
+		}
+		indent := para[:len(para)-len(strings.TrimLeft(para, " \t"))]
+		indent = strings.ReplaceAll(indent, "\t", "    ")
+		if strWidth(indent) > w/2 {
+			indent = ""
+		}
+		line := indent
+		for _, word := range strings.Fields(para) {
+			for strWidth(word) > w-strWidth(indent) { // longer than a line: cut it
+				if strings.TrimSpace(line) != "" {
+					out = append(out, line)
+				}
+				head := takeCells(word, w-strWidth(indent))
+				out = append(out, indent+head)
+				word, line = word[len(head):], indent
+			}
+			switch {
+			case strings.TrimSpace(line) == "":
+				line = indent + word
+			case strWidth(line)+1+strWidth(word) <= w:
+				line += " " + word
+			default:
+				out = append(out, line)
+				line = indent + word
+			}
+		}
+		if strings.TrimSpace(line) != "" {
+			out = append(out, line)
+		}
+	}
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	return out
+}
+
+// takeCells returns the longest prefix of s at most w cells wide, and at
+// least one rune.
+func takeCells(s string, w int) string {
+	used := 0
+	for i, r := range s {
+		if used+runeWidth(r) > w && i > 0 {
+			return s[:i]
+		}
+		used += runeWidth(r)
+	}
+	return s
+}

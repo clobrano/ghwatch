@@ -388,8 +388,8 @@ func (m *Model) keyNormal(k string) {
 		}
 	case kEnter:
 		if m.view == viewComments {
-			if _, t := m.selectedThread(); t != nil {
-				m.open(t.Link())
+			if l := m.selectedLink(); l != "" {
+				m.open(l)
 			}
 		} else if _, c := m.selected(); c != nil {
 			m.open(c.URL)
@@ -404,8 +404,8 @@ func (m *Model) keyNormal(k string) {
 		}
 	case "Y":
 		if m.view == viewComments {
-			if _, t := m.selectedThread(); t != nil {
-				m.copy(t.Link())
+			if l := m.selectedLink(); l != "" {
+				m.copy(l)
 			}
 		} else if _, c := m.selected(); c != nil {
 			m.copy(c.URL)

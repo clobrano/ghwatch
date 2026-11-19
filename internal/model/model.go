@@ -9,6 +9,7 @@ package model
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -302,7 +303,8 @@ func (t Thread) NewSince(since time.Time) int {
 type Comment struct {
 	ID     string `json:"id"`
 	Author string `json:"author"`
-	// Body is the start of the comment's first line.
+	// Body is the comment's text (as GitHub renders it to plain text), cut
+	// at BodyLimit characters.
 	Body      string    `json:"body"`
 	CreatedAt time.Time `json:"created_at"`
 	URL       string    `json:"url,omitempty"`
@@ -318,6 +320,20 @@ type Comment struct {
 // Counts reports whether the comment can be new and notify: it is
 // neither the user's own nor by an ignored author.
 func (c Comment) Counts() bool { return !c.Mine && !c.Ignored }
+
+// BodyLimit caps a comment's stored text, so a huge comment (a CI bot's
+// report, say) does not bloat the snapshot.
+const BodyLimit = 4000
+
+// Summary is the comment's first non-empty line.
+func (c Comment) Summary() string {
+	for _, l := range strings.Split(c.Body, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			return l
+		}
+	}
+	return ""
+}
 
 // Watching reports whether the check named name has its own notifications.
 func (it Item) Watching(name string) bool {

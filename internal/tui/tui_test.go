@@ -922,29 +922,66 @@ func TestCommentsList(t *testing.T) {
 }
 
 func TestExpandThread(t *testing.T) {
-	m, _ := newModel()
+	m, be := newModel()
 	s := withComments(snapshot())
-	s.Items[0].Threads[1].Total = 4 // two older comments were not fetched
+	th := &s.Items[0].Threads[1] // a.go:3
+	th.Total = 4                 // two older comments were not fetched
+	th.Comments[1].Body = "about r2\n\nsecond paragraph"
 	m.SetSnapshot(s)
 	keys(m, "e")
 	if !strings.Contains(m.View(100, 20)[19], "press v") {
 		t.Errorf("e in the checks list: footer %q", m.View(100, 20)[19])
 	}
-	keys(m, "v", "j", "e") // expand a.go:3
-	body := listRows(m.View(100, 22))
-	want := []string{" New · 2", " • conversation", "›• a.go:3 1 new", "   │   ⋯ 2 earlier comments on GitHub", "   │   me · 2h00m ago  about r1", "   │ • alice · 10m ago  about r2", " Open · 1"}
+
+	// Folded, j goes from thread to thread.
+	keys(m, "v", "j")
+	if _, th, c := m.selectedComment(); th.ID != "T1" || c != nil {
+		t.Fatalf("selected %s / %v", th.ID, c)
+	}
+	keys(m, "e") // expand a.go:3
+	body := listRows(m.View(100, 24))
+	want := []string{" New · 2", " • conversation", "›• a.go:3 1 new", "   │   ⋯ 2 earlier comments on GitHub",
+		"   │   me · 2h00m ago", "   │     about r1", "   │ • alice · 10m ago", "   │     about r2", "   │", "   │     second paragraph", " Open · 1"}
 	for i, prefix := range want {
 		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
 			t.Errorf("row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
 		}
 	}
-	// j moves to the next thread, past the comments.
-	keys(m, "j")
-	if _, th := m.selectedThread(); th.ID != "T3" {
-		t.Errorf("j selected %s", th.ID)
+
+	// Expanded, j steps through its comments, then on to the next thread.
+	keys(m, "j", "j")
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" {
+		t.Fatalf("two j from the thread selected %+v", c)
 	}
+	if body := listRows(m.View(100, 24)); !strings.HasPrefix(body[6], "   › • alice") || strings.HasPrefix(body[2], "›") {
+		t.Errorf("selected comment not marked:\n%s", strings.Join(body, "\n"))
+	}
+	keys(m, kEnter, "Y", "b")
+	if be.opened[len(be.opened)-1] != "u/r2" || be.copied[len(be.copied)-1] != "u/r2" {
+		t.Errorf("opened %v, copied %v", be.opened, be.copied)
+	}
+	if last := be.sent[len(be.sent)-1]; last.Op != ipc.OpThreadAlerts || last.Thread != "T1" {
+		t.Errorf("b on a comment sent %+v", last)
+	}
+	keys(m, "j")
+	if _, th, c := m.selectedComment(); th.ID != "T3" || c != nil {
+		t.Errorf("j past the last comment selected %s / %v", th.ID, c)
+	}
+
+	// e on a comment folds its thread and selects it.
 	keys(m, "k", "e")
-	if body := listRows(m.View(100, 22)); strings.Contains(strings.Join(body, "\n"), "│") {
+	if _, th, c := m.selectedComment(); th.ID != "T1" || c != nil {
+		t.Errorf("after folding, selected %s / %v", th.ID, c)
+	}
+	if body := listRows(m.View(100, 24)); strings.Contains(strings.Join(body, "\n"), "│") {
 		t.Errorf("folded thread still expanded:\n%s", strings.Join(body, "\n"))
+	}
+}
+
+func TestWrap(t *testing.T) {
+	got := wrap("one two three four\n\n\n  indented words here\nabcdefghijklmnop", 10)
+	want := []string{"one two", "three four", "", "  indented", "  words", "  here", "abcdefghij", "klmnop"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("wrap = %q", got)
 	}
 }
