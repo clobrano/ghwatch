@@ -744,36 +744,40 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int
 	return out, selRow - top, selEnd - top
 }
 
-// Job list columns: marker, icon, name, time, source, "opt".
-const timeW, srcW = 14, 8
+// Job list columns: marker, icon, name (with its bell and opt tags),
+// time, source.
+const timeW, srcW = 14, 12
 
 // nameWidth is the width of the name column in a w-wide list.
-func nameWidth(w int, anyRequired bool) int {
-	optW := 0
-	if anyRequired {
-		optW = 4
-	}
-	return max(w-3-1-timeW-2-srcW-optW, 8)
-}
+func nameWidth(w int) int { return max(w-3-1-timeW-2-srcW, 8) }
 
-// columnHeader is the job list's header row, like jira-tabbed-tui's.
+// columnHeader is the list's header row, like jira-tabbed-tui's.
 func (m *Model) columnHeader(w int) line {
 	if m.view == viewComments {
-		return line{{"   " + padRight("Thread", threadNameWidth(w)) + " " + padLeft("Last", timeW) + "  " + padRight("Author", authorW), sBold + sText}}
+		return line{{"   " + padRight("Thread", threadNameWidth(w)) + " " + padRight("Author", authorW) + " " + padLeft("Last", lastW), sBold + sText}}
 	}
-	anyRequired := false
-	if it := m.current(); it != nil {
-		for _, c := range it.Checks {
-			anyRequired = anyRequired || c.Required
-		}
-	}
-	return line{{"   " + padRight("Check", nameWidth(w, anyRequired)) + " " + padLeft("Time", timeW) + "  " + padRight("Source", srcW), sBold + sText}}
+	return line{{"   " + padRight("Check", nameWidth(w)) + " " + padLeft("Time", timeW) + "  " + padRight("Source", srcW), sBold + sText}}
 }
 
-// checkRow renders one row of the check list, w cells wide. The selected
-// row is a full-width bar, or carries a › marker without colors.
+// sources shortens the reporting apps' long names for the source column.
+var sources = map[string]string{
+	"GitHub Advanced Security": "GH Security",
+	"GitHub Actions":           "Actions",
+	"GitHub Code Scanning":     "GH Scanning",
+}
+
+func shortSource(s string) string {
+	if short, ok := sources[s]; ok {
+		return short
+	}
+	return s
+}
+
+// checkRow renders one row of the check list, w cells wide: the state
+// icon carries the color, the rest is neutral. The selected row is a
+// full-width bar, or carries a › marker without colors.
 func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, anyRequired bool) line {
-	nameW := nameWidth(w, anyRequired)
+	nameW := nameWidth(w)
 	marker, nameStyle := seg{" ", ""}, sText
 	if selected {
 		marker, nameStyle = seg{" ", ""}, sBold+sStrong
@@ -781,22 +785,22 @@ func (m *Model) checkRow(it *model.Item, c model.Check, selected bool, w int, an
 			marker = seg{"›", ""}
 		}
 	}
-	// The name cell ends with a bell when the job has its own alerts.
-	name := line{{" " + padRight(c.Name, nameW), nameStyle}}
+	// The name ends with a bell when the job has its own alerts, and an
+	// opt tag when it is not required to merge.
+	name := line{{" " + c.Name, nameStyle}}
 	if it.Watching(c.Name) {
-		n := truncate(c.Name, nameW-2)
-		name = line{{" " + n, nameStyle}, {" " + bellIcon, bellStyle(it, sCyan)}, {strings.Repeat(" ", max(nameW-strWidth(n)-2, 0)), ""}}
+		name = append(name, seg{" " + bellIcon, bellStyle(it, sCyan)})
 	}
-	when, whenStyle := m.checkTime(c), stateStyle(c.State)
+	if anyRequired && !c.Required && c.State != model.Queued {
+		name = append(name, seg{" opt", sSecondary})
+	}
+	when, whenStyle := m.checkTime(c), sSecondary
 	if c.State == model.Queued {
 		when, whenStyle = queueStatus(it.MergeQueue)
 	}
-	l := append(line{marker, icon(c.State)}, name...)
-	l = append(l, seg{" " + padLeft(when, timeW), whenStyle},
-		seg{"  " + padRight(c.Source, srcW), sSecondary})
-	if anyRequired && !c.Required && c.State != model.Queued {
-		l = append(l, seg{" opt", sSecondary})
-	}
+	l := append(line{marker, icon(c.State)}, fill(name, nameW+1, "")...)
+	l = append(l, seg{padLeft(when, timeW), whenStyle},
+		seg{"  " + padRight(shortSource(c.Source), srcW), sSecondary})
 	if selected && m.Color {
 		return withStyle(fill(l, w, ""), bgSelect+sBold)
 	}

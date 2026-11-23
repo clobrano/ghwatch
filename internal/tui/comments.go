@@ -261,6 +261,7 @@ func (m *Model) commentsBody(w, rows int) []line {
 		groups[i] = threadGroup(t, readAt)
 	}
 	p := m.selPos(it, ts)
+	names := threadNames(ts)
 	// The selected thread stays in view with as much of its comments as
 	// fits; a selected comment stays in view whole, as far as it fits.
 	from, to := 0, -1
@@ -294,7 +295,7 @@ func (m *Model) commentsBody(w, rows int) []line {
 		},
 		func(i int) []line {
 			lines, _ := expand(i)
-			return append([]line{m.threadRow(it, ts[i], i == p.thread && p.comment < 0, w, readAt)}, lines...)
+			return append([]line{m.threadRow(it, ts[i], names[ts[i].ID], i == p.thread && p.comment < 0, w, readAt)}, lines...)
 		})
 	if p.comment >= 0 && len(out) > 0 {
 		mark := func(text string) line {
@@ -333,12 +334,15 @@ func (m *Model) scrollComment(delta int) {
 // Comment list columns: marker, icon, thread, time, author.
 const authorW = 16
 
-func threadNameWidth(w int) int { return max(w-3-1-timeW-2-authorW, 8) }
+// lastW fits the latest comment's age, e.g. "2d22h ago".
+const lastW = 10
+
+func threadNameWidth(w int) int { return max(w-3-1-authorW-1-lastW, 8) }
 
 // threadRow renders one row of the comment list, w cells wide: the
 // thread with its comment count and latest comment, how long ago and by
 // whom it was written.
-func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, readAt time.Time) line {
+func (m *Model) threadRow(it *model.Item, t model.Thread, name string, selected bool, w int, readAt time.Time) line {
 	nameW := threadNameWidth(w)
 	marker, nameStyle := seg{" ", ""}, sText
 	if selected {
@@ -354,18 +358,19 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 	case t.Resolved:
 		ic = seg{model.Passed.Icon(), sSecondary}
 	}
-	name := t.Name()
-	if t.Outdated {
-		name += " (outdated)"
-	}
 	cell := line{{" " + name, nameStyle}}
+	if t.Outdated {
+		cell = append(cell, seg{" outdated", sSecondary})
+	}
 	if it.WatchingThread(t.ID) {
 		cell = append(cell, seg{" " + bellIcon, bellStyle(it, sCyan)})
 	}
-	if n := t.NewSince(readAt); n > 0 {
-		cell = append(cell, seg{" " + strconv.Itoa(n) + " new", sNew})
-	} else if t.Total > 0 {
+	// The count, then how many are new: always in this order and style.
+	if t.Total > 0 {
 		cell = append(cell, seg{" · " + strconv.Itoa(t.Total), sSecondary})
+	}
+	if n := t.NewSince(readAt); n > 0 {
+		cell = append(cell, seg{" · " + strconv.Itoa(n) + " new", sNew})
 	}
 	when, author := "", ""
 	if c := t.Last(); c != nil {
@@ -377,12 +382,55 @@ func (m *Model) threadRow(it *model.Item, t model.Thread, selected bool, w int, 
 	} else {
 		cell = append(cell, seg{"  no comments yet", sSecondary})
 	}
+	// The cell is cut a column short of the author, so a cut snippet's
+	// "…" never touches the name.
 	l := append(line{marker, ic}, fill(cell, nameW+1, "")...)
-	l = append(l, seg{" " + padLeft(when, timeW), sMuted}, seg{"  " + padRight(author, authorW), sSecondary})
+	l = append(l, seg{" " + padRight(author, authorW), sSecondary}, seg{" " + padLeft(when, lastW), sMuted})
 	if selected && m.Color {
 		return withStyle(fill(l, w, ""), bgSelect+sBold)
 	}
 	return l
+}
+
+// threadNames are the names the list shows for ts, by thread ID: a code
+// thread is its file and line, with as many parent directories as it
+// takes to tell files of the same name apart.
+func threadNames(ts []model.Thread) map[string]string {
+	names := map[string]string{}
+	paths := map[string]bool{}
+	for _, t := range ts {
+		if t.Path != "" {
+			paths[t.Path] = true
+		}
+	}
+	suffix := func(path string, k int) string {
+		parts := strings.Split(path, "/")
+		return strings.Join(parts[max(len(parts)-k, 0):], "/")
+	}
+	for _, t := range ts {
+		if t.Path == "" {
+			names[t.ID] = t.Name()
+			continue
+		}
+		k := 1
+		for clash := true; clash && k < 32; k++ {
+			clash = false
+			for p := range paths {
+				if p != t.Path && suffix(p, k) == suffix(t.Path, k) {
+					clash = true
+				}
+			}
+			if !clash {
+				break
+			}
+		}
+		name := suffix(t.Path, k)
+		if t.Line > 0 {
+			name += ":" + strconv.Itoa(t.Line)
+		}
+		names[t.ID] = name
+	}
+	return names
 }
 
 // toggleThread expands the selected thread to show each of its fetched
@@ -417,6 +465,9 @@ func (m *Model) toggleThread() {
 // line.
 func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel int) (out []line, spans [][2]int) {
 	gutter := seg{"   │", sBorder}
+	if t.Path != "" { // the list shows the file; here is the whole path
+		out = append(out, line{gutter, {"   " + t.Name(), sSecondary}})
+	}
 	if n := t.Total - len(t.Comments); n > 0 {
 		out = append(out, line{gutter, {"   ⋯ " + plural(n, "earlier comment") + " on GitHub", sSecondary}})
 	}
@@ -488,6 +539,7 @@ func (m *Model) findThreadsBody(w, rows int) []line {
 		return []line{{{" no matching thread", sSecondary}}}
 	}
 	readAt := m.readMark(it)
+	names := threadNames(ts)
 	sel := min(m.findSel, len(matches)-1)
 	m.findSel = sel
 	out := []line{{{" " + strconv.Itoa(len(matches)) + " of " + strconv.Itoa(len(ts)) + " threads match", sSecondary}}}
@@ -496,7 +548,7 @@ func (m *Model) findThreadsBody(w, rows int) []line {
 		if len(out) >= rows {
 			break
 		}
-		out = append(out, m.threadRow(it, ts[idx], start+n == sel, w, readAt))
+		out = append(out, m.threadRow(it, ts[idx], names[ts[idx].ID], start+n == sel, w, readAt))
 	}
 	return out
 }

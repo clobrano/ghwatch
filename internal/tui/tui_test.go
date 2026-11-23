@@ -918,14 +918,14 @@ func TestCommentsList(t *testing.T) {
 	if !strings.Contains(strings.Join(rows, "\n"), "[Comments 2 new]") {
 		t.Errorf("list title missing:\n%s", strings.Join(rows, "\n"))
 	}
-	want := []string{" New · 2", "›• conversation 1 new  about c2", " • a.go:3 1 new  about r2", " Open · 1", " c c.go:1 (outdated) · 1", " Resolved · 1", " √ b.go:7 · 1"}
+	want := []string{" New · 2", "›• conversation · 9 · 1 new  about c2", " • a.go:3 · 2 · 1 new  about r2", " Open · 1", " c c.go:1 outdated · 1", " Resolved · 1", " √ b.go:7 · 1"}
 	body := listRows(rows)
 	for i, prefix := range want {
 		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
 			t.Errorf("row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
 		}
 	}
-	if !strings.Contains(body[1], "5m ago  ci-robot") {
+	if f := strings.Fields(body[1]); f[len(f)-3] != "ci-robot" || f[len(f)-2] != "5m" {
 		t.Errorf("row 1 = %q", body[1])
 	}
 
@@ -998,7 +998,7 @@ func TestExpandThread(t *testing.T) {
 	}
 	keys(m, "e") // expand a.go:3
 	body := listRows(m.View(100, 24))
-	want := []string{" New · 2", " • conversation", "›• a.go:3 1 new", "   │   ⋯ 2 earlier comments on GitHub",
+	want := []string{" New · 2", " • conversation", "›• a.go:3 · 4 · 1 new", "   │   a.go:3", "   │   ⋯ 2 earlier comments on GitHub",
 		"   │   me · 2h00m ago", "   │     about r1", "   │ • alice · 10m ago", "   │     about r2", "   │", "   │     second paragraph", " Open · 1"}
 	for i, prefix := range want {
 		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
@@ -1011,7 +1011,7 @@ func TestExpandThread(t *testing.T) {
 	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" {
 		t.Fatalf("two j from the thread selected %+v", c)
 	}
-	if body := listRows(m.View(100, 24)); !strings.HasPrefix(body[6], "   › • alice") || strings.HasPrefix(body[2], "›") {
+	if body := listRows(m.View(100, 24)); !strings.HasPrefix(body[7], "   › • alice") || strings.HasPrefix(body[2], "›") {
 		t.Errorf("selected comment not marked:\n%s", strings.Join(body, "\n"))
 	}
 	keys(m, kEnter, "Y", "b")
@@ -1353,5 +1353,46 @@ func TestListTabs(t *testing.T) {
 	m.Color = true
 	if got := m.View(100, 24)[row]; !strings.Contains(got, bgAccent+sBold+sOnAccent+" Comments") {
 		t.Errorf("active tab not highlighted: %q", got)
+	}
+}
+
+func TestThreadNames(t *testing.T) {
+	ts := []model.Thread{
+		{ID: model.ConversationID},
+		{ID: "a", Path: "docs/x/prd.md", Line: 3},
+		{ID: "b", Path: "docs/y/prd.md", Line: 7},
+		{ID: "c", Path: "pkg/main.go", Line: 1},
+		{ID: "d", Path: "pkg/main.go", Line: 9},
+		{ID: "e", Path: "README.md"},
+	}
+	got := threadNames(ts)
+	want := map[string]string{model.ConversationID: "conversation", "a": "x/prd.md:3", "b": "y/prd.md:7", "c": "main.go:1", "d": "main.go:9", "e": "README.md"}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s: %q, want %q", id, got[id], w)
+		}
+	}
+}
+
+func TestCheckRowTags(t *testing.T) {
+	m, _ := newModel()
+	s := snapshot()
+	s.Items[0].Checks[0].Source = "GitHub Advanced Security"
+	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
+	m.SetSnapshot(s)
+	body := listRows(m.View(100, 20))
+	// opt follows the name (after its bell); long sources are shortened.
+	if !strings.HasPrefix(body[3], " * e2e-metal-ipi "+bellIcon+" opt ") {
+		t.Errorf("optional job row = %q", body[3])
+	}
+	if !strings.Contains(strings.Join(body, "\n"), "GH Security") {
+		t.Errorf("source not shortened:\n%s", strings.Join(body, "\n"))
+	}
+	// Times are neutral: only the icon carries the state's color.
+	m.Color = true
+	for _, r := range m.View(100, 20) {
+		if strings.Contains(r, "running 23m") && strings.Contains(r, sYellow+padLeft("running 23m", timeW)) {
+			t.Errorf("running time in the state color: %q", r)
+		}
 	}
 }

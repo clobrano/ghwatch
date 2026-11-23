@@ -52,14 +52,19 @@ it. From top to bottom:
   others stay in the order they were first seen. Ringing or silencing a
   bell does not move the job: the order catches up the next time you
   open the tab. When a job changes group, the selection follows it.
-  Jobs marked `opt` are not required by branch protection. When a PR
-  has required checks, a failing optional one does not turn the PR red.
-- **Comment list:** a Thread / Last / Author header. One row is the
+  A job's name is followed by its bell, if any, and by `opt` when
+  branch protection does not require it; when a PR has required checks,
+  a failing optional one does not turn the PR red. Only the state icon
+  is colored: times and sources stay neutral, and long source names are
+  shortened (`GitHub Advanced Security` is `GH Security`).
+- **Comment list:** a Thread / Author / Last header. One row is the
   **conversation**: the PR's comments and review summaries (approvals,
   change requests). Every other row is a **review thread** on code,
-  named by file and line (`pkg/foo.go:42`). A row shows its number of
-  comments, or how many are new, the start of the latest comment, how
-  long ago and by whom it was written. Groups, top to bottom: **New**
+  named by file and line (`prd.md:42`), with as many parent directories
+  as it takes to tell apart files of the same name; an expanded thread
+  starts with the full path. A row shows its comments (`· 3`), how many
+  are new (`· 1 new`), an `outdated` tag when the code changed since,
+  the start of the latest comment, and who wrote it and how long ago. Groups, top to bottom: **New**
   (threads with new comments, marked `•`), **Open**, and **Resolved**.
   Within a group, threads with a bell come first, then the conversation,
   then the most recently commented. `e` expands the selected thread:
