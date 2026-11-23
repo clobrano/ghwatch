@@ -7,8 +7,8 @@
 # directory and plays a scripted story, so it needs no GitHub access and
 # does not touch your watchlist or a running daemon.
 #
-# The alert bell is a Nerd Fonts glyph: set FontFamily to a Nerd Font you
-# have installed, or it shows as a box.
+# The alert bell and the comment mark are Nerd Fonts glyphs (codicons):
+# set FontFamily to a Nerd Font you have installed, or they show as boxes.
 
 Output docs/demo.gif
 
@@ -18,9 +18,9 @@ Set Shell "bash"
 Set FontFamily "JetBrainsMono Nerd Font"
 Set FontSize 15
 Set Width 1100
-Set Height 560
+Set Height 640
 Set Padding 12
-Set Theme "Catppuccin Mocha"
+Set Theme "Catppuccin Frappe"
 Set TypingSpeed 80ms
 Set CursorBlink false
 
@@ -34,31 +34,40 @@ Type "(demo >/dev/null 2>&1 &); sleep 0.5; clear" Enter
 Sleep 700ms
 Show
 
-# Story time in brackets: the scripted events happen at 9s, 12s, 20s, 30s.
+# Story time in brackets: the scripted events happen at 5s (a new
+# comment), 13s (a job fails), 16s, 25s and 34s (the merge queue).
 
-# #123: jobs are running; turn its alerts on. [~2s]
+# #123 opens on its comments; a reviewer replies in a code thread. [~1s]
 Type "ghwatch" Sleep 400ms Enter
-Sleep 2.5s
-Type "j" Sleep 600ms
-Type "j" Sleep 600ms
+Sleep 5.5s
+
+# Expand the thread and read it, down to the new comment. [~7s]
+Type "k" Sleep 700ms
+Type "e" Sleep 1.5s
+Type "j" Sleep 500ms
+Type "j" Sleep 500ms
+Type "j" Sleep 2s
+
+# The checks: e2e-aws-ovn fails and moves to the Failed group. [~12s]
+Type "v" Sleep 3.5s
+# Alerts on for the PR.
 Type "n" Sleep 2s
 
-# e2e-aws-ovn fails and moves to the Failed group. [9s]
-Sleep 3s
-
-# #131 is in the merge queue; enter opens the queue page. [12s]
+# #131 is in the merge queue; enter opens the queue page. [~18s]
 Type "l" Sleep 2.5s
-Enter Sleep 2.5s
+Enter Sleep 2s
 
 # Notification settings.
 Type "N" Sleep 2.5s
-Escape
+Escape Sleep 3.5s
 
-# #131 moves up the queue [20s], then merges [30s].
-Sleep 11.5s
-
-Type "?" Sleep 3s
+# Keys, then the legend. [~29s]
+Type "?" Sleep 2.5s
+Tab Sleep 3.5s
 Type "x" Sleep 1s
+
+# #131 moved up the queue [25s], and merges [34s].
+Sleep 4s
 Type "q" Sleep 500ms
 
 Hide

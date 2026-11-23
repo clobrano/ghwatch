@@ -529,7 +529,7 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 				d.snap.Items[i].Alerts = *cmd.On
 				unmuteOnChange(&d.snap.Items[i], *cmd.On)
 				d.publishLocked()
-				return fmt.Sprintf("alerts %s for %s", onOff(*cmd.On), cmd.ID), nil
+				return fmt.Sprintf("alerts %s for %s", onOff(*cmd.On), ref(d.snap.Items[i])), nil
 			}
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)
@@ -545,14 +545,14 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 				continue
 			}
 			if *cmd.On && !it.HasAlerts() {
-				return "", fmt.Errorf("no alerts to mute on %s", cmd.ID)
+				return "", fmt.Errorf("no alerts to mute on %s", ref(*it))
 			}
 			it.Muted = *cmd.On
 			d.publishLocked()
 			if *cmd.On {
-				return fmt.Sprintf("alerts muted for %s", cmd.ID), nil
+				return fmt.Sprintf("alerts muted for %s", ref(*it)), nil
 			}
-			return fmt.Sprintf("alerts restored for %s", cmd.ID), nil
+			return fmt.Sprintf("alerts restored for %s", ref(*it)), nil
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)
 	case ipc.OpClearAlerts:
@@ -564,11 +564,11 @@ func (d *Daemon) Handle(ctx context.Context, cmd ipc.Command) (string, error) {
 				continue
 			}
 			if !it.HasAlerts() {
-				return fmt.Sprintf("no alerts set on %s", cmd.ID), nil
+				return fmt.Sprintf("no alerts set on %s", ref(*it)), nil
 			}
 			it.Alerts, it.WatchedChecks, it.WatchedThreads, it.Muted = false, nil, nil, false
 			d.publishLocked()
-			return fmt.Sprintf("alerts cleared for %s", cmd.ID), nil
+			return fmt.Sprintf("alerts cleared for %s", ref(*it)), nil
 		}
 		return "", fmt.Errorf("not watching %s", cmd.ID)
 	case ipc.OpSeen:
@@ -830,7 +830,13 @@ func (d *Daemon) discuss(ctx context.Context, cmd ipc.Command) (string, error) {
 	return info, nil
 }
 
-func ref(it model.Item) string { return fmt.Sprintf("%s#%d", it.Repo, it.Number) }
+// ref is how messages name an item: org/repo#N, or its ID until fetched.
+func ref(it model.Item) string {
+	if it.Repo == "" || it.Number == 0 {
+		return it.ID
+	}
+	return fmt.Sprintf("%s#%d", it.Repo, it.Number)
+}
 
 // unmuteOnChange unmutes an item when an alert is turned on, so the new
 // alert works at once, or when its last alert is turned off, leaving

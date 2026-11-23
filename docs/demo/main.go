@@ -3,7 +3,8 @@
 // only the pull requests come from a script instead of the GitHub API, so
 // every recording tells the same story:
 //
-//   - #123: jobs finish one by one, then e2e-aws-ovn fails;
+//   - #123: a reviewer replies in a code thread, jobs finish one by one,
+//     then e2e-aws-ovn fails;
 //   - #131: all green, enters the merge queue, moves up, and merges;
 //   - osac#58 and #140: settled.
 //
@@ -107,10 +108,33 @@ func (s *story) Fetch(_ context.Context, _ *github.Client, ids []string) ([]mode
 			it.Checks = []model.Check{
 				check("lint", pr.SourceActions, model.Passed, 50*time.Minute, 2*time.Minute),
 				check("unit", pr.SourceActions, after(4, model.Passed, model.Running), 50*time.Minute, 6*time.Minute),
-				check("e2e-aws-ovn", pr.SourceProw, after(9, model.Failed, model.Running), 48*time.Minute, 41*time.Minute),
+				check("e2e-aws-ovn", pr.SourceProw, after(13, model.Failed, model.Running), 48*time.Minute, 41*time.Minute),
 				check("e2e-metal-ipi", pr.SourceProw, after(6, model.Running, model.Pending), 23*time.Minute, 0),
 				check("ci/prow/images", pr.SourceProw, after(3, model.Passed, model.Running), 49*time.Minute, 12*time.Minute),
 				check("tide", pr.SourceProw, model.Pending, 0, 0),
+			}
+			comment := func(id, author string, at time.Time, body string) model.Comment {
+				return model.Comment{ID: id, Author: author, Body: body, CreatedAt: at, Mine: author == "clobrano",
+					URL: it.URL + "#discussion_" + id}
+			}
+			lease := []model.Comment{
+				comment("r1", "mshitrit", *ago(45 * time.Minute), "Can this renewal race with the expiry check below?\nA shared mutex would make the ordering explicit."),
+				comment("r2", "clobrano", *ago(31 * time.Minute), "Good catch, it can. Both now run under the manager's lock."),
+			}
+			if t >= 5*time.Second {
+				lease = append(lease, comment("r3", "mshitrit", s.start.Add(5*time.Second),
+					"Thanks! Could you add a test that renews right at expiry?\nThat is the window the race lived in."))
+			}
+			it.Threads = []model.Thread{
+				{ID: model.ConversationID, Total: 2, URL: it.URL, Comments: []model.Comment{
+					comment("c1", "openshift-ci-robot", *ago(52 * time.Minute), "@clobrano: This pull request references NHC-412, a valid jira issue."),
+					comment("c2", "slintes", *ago(38 * time.Minute), "Approach looks right to me, waiting for CI."),
+				}},
+				{ID: "T1", Path: "pkg/lease/manager.go", Line: 88, Total: len(lease), URL: it.URL + "/files", Comments: lease},
+				{ID: "T2", Path: "pkg/lease/manager_test.go", Line: 12, Resolved: true, Total: 2, URL: it.URL + "/files", Comments: []model.Comment{
+					comment("s1", "slintes", *ago(40 * time.Minute), "nit: t.Parallel()"),
+					comment("s2", "clobrano", *ago(33 * time.Minute), "done"),
+				}},
 			}
 		case 131:
 			it.Title, it.Branch, it.HeadSHA = "Raise SBD watchdog timeout", "sbd-timeout", "b7c8d9e0f1a2"
@@ -123,11 +147,11 @@ func (s *story) Fetch(_ context.Context, _ *github.Client, ids []string) ([]mode
 			}
 			q := &model.MergeQueue{URL: "https://github.com/medik8s/node-healthcheck-operator/queue/main"}
 			switch {
-			case t >= 30*time.Second:
+			case t >= 34*time.Second:
 				it.Lifecycle, q = model.LifeMerged, nil
-			case t >= 20*time.Second:
+			case t >= 25*time.Second:
 				q.State, q.Position, q.EnqueuedAt, q.ETASeconds = "awaiting_checks", 1, *ago(9 * time.Minute), 240
-			case t >= 12*time.Second:
+			case t >= 16*time.Second:
 				q.State, q.Position, q.EnqueuedAt, q.ETASeconds = "queued", 2, *ago(5 * time.Minute), 780
 			default:
 				q = nil
