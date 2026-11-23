@@ -6,13 +6,13 @@ set by `theme` in config.toml (`latte`, `frappe`, `macchiato` or `mocha`).
 ghwatch keeps the terminal's background, so pick the flavor that matches
 it. From top to bottom:
 
-- **Title bar:** the app name and how many PRs are watched and in which
-  state (failed, running, passed, queued, merged or closed). It also shows
-  how many PRs have alerts, how many changed since you last looked
-  (`•2 new`), how many new comments there are in all, whether
-  notifications are muted, and when
-  GitHub was last polled. The poll time turns yellow ("last poll … ago")
-  while polling fails.
+- **Title bar:** the app name, then in words how many PRs are in each
+  state (`4 PRs: 1 failing · 1 running · 1 passed · 1 merged`), then, when
+  there are some, how many changed since you last looked and how many
+  new comments there are in all. It says `muted` while notifications are
+  muted, and when GitHub was last polled; the poll time turns yellow
+  ("last poll … ago") while polling fails. On a narrow screen the
+  tagline gives way first.
 - **Tabs:** one per PR, in the order they were added. A label is the
   tab's number (its `1`–`9` key), the PR's state icon, the number and a
   short name, and a bell when alerts are on. A PR from a repository other
@@ -22,14 +22,23 @@ it. From top to bottom:
   it got a new push, or it was merged or closed. Pressing any key while
   on its tab clears the mark, in every open TUI. A comment mark and a
   count show the PR's new comments; they clear the same way.
-- **PR header:** the PR's state first, as a chip like GitHub's (`OPEN`
-  green, `MERGED` mauve, `CLOSED` red), then reference, title and author;
-  below, head commit, push time, progress, failures and unresolved
-  review threads. The PR's
-  labels follow on a `labels:` line, each name in bold in its GitHub
-  color, lightened just enough to read on the background when GitHub's
-  color is too dark (darkened with the light flavor).
-- **List:** each PR has two lists, its comments and its jobs, and `v`
+- **PR header:** the first line is like the top of GitHub's PR page: the
+  state chip (`OPEN` green, `MERGED` mauve, `CLOSED` red), the title, the
+  reference (`org/repo#123`), and the author at the right; a long title
+  is cut before the reference. Labelled rows follow, each only when it
+  has something to say:
+  - `CI:` the head's checks: progress, failures (saying how many are
+    required: `2 failing (1 required)`, `1 failing, none required`),
+    jobs still running, and the commit they run on with its push time.
+    While the PR is in a merge queue, the queue comes first.
+  - `comments:` new comments and unresolved review threads.
+  - `alerts:` the notifications set on the PR, its jobs and threads.
+  - `labels:` each label in bold in its GitHub color, lightened just
+    enough to read on the background when GitHub's color is too dark
+    (darkened with the light flavor).
+
+  On a short screen the last rows give way, so the list keeps its room.
+- **List:** a box that ends after its last row. Each PR has two lists, its comments and its jobs, and `v`
   switches between them. The box's top border names both, comments
   first, with the one shown highlighted and the number of new comments
   (`Comments 3 new`). ghwatch opens on the comments.
@@ -57,12 +66,12 @@ it. From top to bottom:
   is expanded, `j`/`k` step through its comments, and `enter`, `Y` open
   or copy the selected comment; folded, they move from thread to thread.
   `e` again folds it.
-- **Footer:** what the main keys do (`h/l prev/next PR · j/k next/prev job
-  · v comments · enter open job · …`), for the list shown, and the
-  connection to the daemon.
-  On narrow terminals the less important hints give way, and
-  `? all keys` always stays. Messages replace the hints for a few
-  seconds.
+- **Footer:** the main keys of the list shown (`h/l PR · j/k job · enter
+  open · b bell · v comments · ? help`; in the comments list also
+  `e expand · r reply`), and the connection to the daemon. On narrow
+  terminals the less important hints give way, and `? help` always
+  stays; every other key is in the `?` panel. Messages replace the hints
+  for a few seconds.
 
 `?` opens the full list of keys in a panel, grouped by topic; `tab`
 switches it to the legend, which shows every state icon and mark and

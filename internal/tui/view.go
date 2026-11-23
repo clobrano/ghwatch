@@ -73,9 +73,13 @@ func (m *Model) lines(w, h int) []line {
 		return overlay(w, h, "Notifications", m.eventsContent())
 	}
 	out := []line{m.titleBar(w), m.tabBar(w), {{strings.Repeat("─", w), sBorder}}}
-	out = append(out, m.header(w)...)
-	// The job list sits in a box: border, column header, separator, rows.
-	rows := h - len(out) - 1 - 4
+	// On a short screen the header's last rows (labels, alerts, comments)
+	// give way, so the list and the footer keep their place.
+	hdr := m.header(w)
+	out = append(out, hdr[:min(len(hdr), max(h-len(out)-1-4, 2))]...)
+	// The list sits in a box: border, column header, rows, border. The
+	// box ends after its last row; the footer stays at the bottom.
+	rows := max(h-len(out)-1-3, 1)
 	var b []line
 	switch {
 	case m.mode == modeFind && m.view == viewComments:
@@ -87,17 +91,17 @@ func (m *Model) lines(w, h int) []line {
 	default:
 		b = m.checksBody(w-2, rows)
 	}
-	content := []line{m.columnHeader(w - 2), {{strings.Repeat("─", w-2), sBorder}}}
-	for i := 0; i < rows; i++ {
-		if i < len(b) {
-			content = append(content, b[i])
-		} else {
-			content = append(content, line{})
-		}
+	content := []line{m.columnHeader(w - 2)}
+	content = append(content, b[:min(len(b), rows)]...)
+	if len(b) == 0 {
+		content = append(content, line{})
 	}
 	list := box(content, w, sBorder, "", false)
 	list[0] = m.listTitle(w)
 	out = append(out, list...)
+	for len(out) < h-1 {
+		out = append(out, line{})
+	}
 	return append(out, m.footer(w))
 }
 
@@ -151,7 +155,7 @@ func (m *Model) titleBar(w int) line {
 	}
 	left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%d %s", len(items), prs), sMuted})
 	counts := map[model.State]int{}
-	alerts, unseen, comments := 0, 0, 0
+	unseen, comments := 0, 0
 	for _, it := range items {
 		comments += it.NewComments()
 		st := model.ItemState(it)
@@ -162,26 +166,30 @@ func (m *Model) titleBar(w int) line {
 			st = model.Merged
 		}
 		counts[st]++
-		if it.HasAlerts() && !it.Muted {
-			alerts++
-		}
 		if it.Unseen {
 			unseen++
 		}
 	}
-	for _, st := range []model.State{model.Failed, model.Running, model.Passed, model.Queued, model.Merged} {
-		if counts[st] > 0 {
-			left = append(left, seg{" ", ""}, seg{fmt.Sprintf("%s%d", st.Icon(), counts[st]), stateStyle(st)})
+	// In words: how many PRs are in each state, then what is new.
+	sep := seg{": ", sDim}
+	for _, sc := range []struct {
+		st   model.State
+		word string
+	}{{model.Failed, "failing"}, {model.Running, "running"}, {model.Passed, "passed"}, {model.Queued, "queued"}, {model.Merged, "merged"}} {
+		if counts[sc.st] > 0 {
+			left = append(left, sep, seg{fmt.Sprintf("%d %s", counts[sc.st], sc.word), stateStyle(sc.st)})
+			sep = seg{" · ", sDim}
 		}
 	}
-	if alerts > 0 {
-		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s %d", bellIcon, alerts), sCyan})
-	}
 	if unseen > 0 {
-		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s%d new", unseenMark, unseen), sBold + sNew})
+		left = append(left, seg{"  │  ", sDim}, seg{fmt.Sprintf("%d changed", unseen), sBold + sNew})
 	}
 	if comments > 0 {
-		left = append(left, seg{" · ", sDim}, seg{fmt.Sprintf("%s %d", commentMark(), comments), sBold + sNew})
+		pre := seg{"  │  ", sDim}
+		if unseen > 0 {
+			pre = seg{" · ", sDim}
+		}
+		left = append(left, pre, seg{plural(comments, "new comment"), sBold + sNew})
 	}
 	if m.snap.Settings.Mute {
 		left = append(left, seg{" · ", sDim}, seg{"muted", sYellow})
@@ -195,6 +203,10 @@ func (m *Model) titleBar(w int) line {
 		right = line{{"last poll " + human(m.now().Sub(m.snap.PolledAt)) + " ago ", sYellow}}
 	default:
 		right = line{{"polled " + human(m.now().Sub(m.snap.PolledAt)) + " ago ", sSecondary}}
+	}
+	// On a narrow screen the tagline gives way before the summary.
+	if left.width()+right.width()+1 > w && len(left) > 1 && left[1].text == "  "+appTagline {
+		left = append(line{left[0]}, left[2:]...)
 	}
 	return spread(left, right, w)
 }
@@ -326,56 +338,121 @@ func (m *Model) header(w int) []line {
 	if it == nil {
 		return []line{{{" Nothing watched yet", sBold}}, {{" press a to add a PR, or run: ghwatch add <PR URL>", sSecondary}}}
 	}
-	title := line{{" ", ""}}
-	if it.HeadSHA != "" { // known once fetched
-		title = append(title, m.lifecycleChip(it.Lifecycle), seg{" ", ""})
+	out := []line{m.titleLine(it, w)}
+	row := func(label string, segs ...seg) {
+		l := line{{" " + padRight(label+":", headerLabelW), sSecondary}}
+		for i, s := range segs {
+			if i > 0 {
+				l = append(l, seg{" · ", sDim})
+			}
+			l = append(l, s)
+		}
+		out = append(out, l)
 	}
-	title = append(title, seg{ref(*it), sBold + sAccent}, seg{"  " + it.Title, sBold + sStrong})
-	l1 := spread(title, line{{"@" + it.Author + " ", sSecondary}}, w)
-	if it.Author == "" {
-		l1 = title
+	if it.Error != "" {
+		row("error", seg{"! " + it.Error, sRed})
 	}
-	dot := seg{" · ", sDim}
-	var l2 line
-	add := func(s seg) {
-		if len(l2) > 0 {
-			l2 = append(l2, dot)
+	if it.HeadSHA == "" {
+		if it.Error == "" {
+			row("CI", seg{"waiting for the first poll…", sSecondary})
 		}
-		l2 = append(l2, s)
+		return out
 	}
-	switch {
-	case it.HeadSHA == "" && it.Error != "":
-	case it.HeadSHA == "":
-		add(seg{"waiting for the first poll…", sSecondary})
-	default:
-		// The merge queue comes first: it is what matters most while queued.
-		if q := it.MergeQueue; q != nil {
-			add(m.queueSeg(q))
-		}
-		add(seg{"head " + short(it.HeadSHA), sMuted})
-		if !it.PushedAt.IsZero() {
-			add(seg{"pushed " + human(m.now().Sub(it.PushedAt)) + " ago", sMuted})
-		}
-		done, failed := model.Progress(it.Checks)
-		add(seg{fmt.Sprintf("%d/%d done", done, len(it.Checks)), sMuted})
-		if failed > 0 {
-			add(seg{fmt.Sprintf("%d failing", failed), sRed})
-		}
+	// CI runs on the head commit: it closes the CI row.
+	head := "on " + short(it.HeadSHA)
+	if !it.PushedAt.IsZero() {
+		head += ", pushed " + human(m.now().Sub(it.PushedAt)) + " ago"
+	}
+	row("CI", append(m.ciSegs(it), seg{head, sSecondary})...)
+	if c := m.commentSegs(it); len(c) > 0 {
+		row("comments", c...)
+	}
+	if a := alertSegs(it); len(a) > 0 {
+		row("alerts", a...)
+	}
+	if len(it.Labels) > 0 {
+		out = append(out, labelLine(it.Labels))
+	}
+	return out
+}
 
+// headerLabelW is the width of the header rows' labels ("comments:").
+const headerLabelW = 10
+
+// titleLine is the header's first line, like the top of GitHub's PR page:
+// the state chip, the title, then the reference, with the author at the
+// right. The title gives way first when space is short.
+func (m *Model) titleLine(it *model.Item, w int) line {
+	left := line{{" ", ""}}
+	if it.HeadSHA != "" { // known once fetched
+		left = append(left, m.lifecycleChip(it.Lifecycle), seg{" ", ""})
 	}
-	if it.Muted {
-		// The muted alerts are restored as they were: no need to detail them.
-		add(seg{bellIcon + " muted (m restores)", sMuted})
-	} else if it.Alerts {
-		add(seg{"alerts on", sAccent})
+	ref := seg{"  " + ref(*it), sAccent}
+	var right line
+	if it.Author != "" {
+		right = line{{"@" + it.Author + " ", sSecondary}}
 	}
-	if n := len(it.WatchedChecks); n > 0 && !it.Muted {
-		add(seg{bellIcon + " " + plural(n, "job"), sAccent})
+	room := w - left.width() - strWidth(ref.text) - right.width() - 1
+	if room < 10 { // too narrow: the reference gives way too
+		right = nil
+		room = w - left.width() - strWidth(ref.text) - 1
 	}
-	if n := len(it.WatchedThreads); n > 0 && !it.Muted {
-		add(seg{bellIcon + " " + plural(n, "thread"), sAccent})
+	left = append(left, seg{truncate(it.Title, max(room, 1)), sBold + sStrong}, ref)
+	return spread(left, right, w)
+}
+
+// ciSegs sums up the head's checks: the merge queue first while queued,
+// then progress, failures (saying how many block the merge) and jobs
+// still running.
+func (m *Model) ciSegs(it *model.Item) []seg {
+	var out []seg
+	if q := it.MergeQueue; q != nil {
+		out = append(out, m.queueSeg(q))
 	}
-	// Comments come last: new ones are counted in the list's title.
+	if len(it.Checks) == 0 {
+		return append(out, seg{"no checks reported yet", sSecondary})
+	}
+	done, failed := model.Progress(it.Checks)
+	out = append(out, seg{fmt.Sprintf("%d/%d done", done, len(it.Checks)), sMuted})
+	anyRequired, requiredFailed, running := false, 0, 0
+	for _, c := range it.Checks {
+		anyRequired = anyRequired || c.Required
+		if c.State == model.Failed && c.Required {
+			requiredFailed++
+		}
+		if c.State == model.Running || c.State == model.Pending {
+			running++
+		}
+	}
+	if failed > 0 {
+		text := fmt.Sprintf("%d failing", failed)
+		switch {
+		case !anyRequired:
+		case requiredFailed == 0:
+			text += ", none required"
+		case requiredFailed < failed:
+			text += fmt.Sprintf(" (%d required)", requiredFailed)
+		default:
+			text += ", all required"
+		}
+		out = append(out, seg{text, sRed})
+	}
+	if running > 0 {
+		out = append(out, seg{fmt.Sprintf("%d running", running), sYellow})
+	}
+	return out
+}
+
+// commentSegs sums up the comments: how many are new in this visit and
+// how many review threads are unresolved.
+func (m *Model) commentSegs(it *model.Item) []seg {
+	if len(it.Threads) == 0 {
+		return nil
+	}
+	var out []seg
+	if n := m.newShown(it); n > 0 {
+		out = append(out, seg{plural(n, "new comment"), sNew + sBold})
+	}
 	open := 0
 	for _, t := range it.Threads {
 		if t.ID != model.ConversationID && !t.Resolved {
@@ -383,17 +460,29 @@ func (m *Model) header(w int) []line {
 		}
 	}
 	if open > 0 {
-		add(seg{plural(open, "unresolved thread"), sMuted})
+		out = append(out, seg{plural(open, "unresolved thread"), sMuted})
 	}
-	if it.Error != "" {
-		add(seg{"! " + it.Error, sRed})
+	if len(out) == 0 {
+		out = append(out, seg{"nothing new", sSecondary})
 	}
-	if len(l2) > 0 {
-		l2 = append(line{{" ", ""}}, l2...)
+	return out
+}
+
+// alertSegs says which notifications are set on it.
+func alertSegs(it *model.Item) []seg {
+	if it.Muted {
+		// The muted alerts are restored as they were: no need to detail them.
+		return []seg{{bellIcon + " muted (m restores)", sMuted}}
 	}
-	out := []line{l1, l2}
-	if len(it.Labels) > 0 {
-		out = append(out, labelLine(it.Labels))
+	var out []seg
+	if it.Alerts {
+		out = append(out, seg{"on for the PR", sAccent})
+	}
+	if n := len(it.WatchedChecks); n > 0 {
+		out = append(out, seg{bellIcon + " " + plural(n, "job"), sAccent})
+	}
+	if n := len(it.WatchedThreads); n > 0 {
+		out = append(out, seg{bellIcon + " " + plural(n, "thread"), sAccent})
 	}
 	return out
 }
@@ -475,7 +564,7 @@ func ordinal(n int) string {
 
 // labelLine lists the labels, each in bold in its GitHub color.
 func labelLine(labels []model.Label) line {
-	l := line{{" labels: ", sSecondary}}
+	l := line{{" " + padRight("labels:", headerLabelW), sSecondary}}
 	for i, lb := range labels {
 		if i > 0 {
 			l = append(l, seg{" · ", sDim})
@@ -999,21 +1088,14 @@ var footerHints = []struct {
 	key, label, comments string
 	drop                 int
 }{
-	{"h/l", "prev/next PR", "", 3},
-	{"j/k", "next/prev job", "next/prev thread", 4},
-	{"v", "comments", "checks", 5},
-	{"enter", "open job", "open comment", 1},
-	{"e", "", "expand", 11}, // comments only
-	{"r", "", "reply", 12},
-	{"R", "", "resolve", 13},
-	{"J/K", "", "scroll comment", 14},
-	{"o", "open PR", "", 2},
-	{"y/Y", "copy PR/job link", "copy PR/comment link", 9},
-	{"n", "alert PR", "", 6},
-	{"b", "alert job", "alert thread", 7},
-	{"N", "alert settings", "", 10},
-	{"/", "find job", "find thread", 8},
-	{"?", "all keys", "", 0},
+	{"h/l", "PR", "", 2},
+	{"j/k", "job", "thread", 3},
+	{"enter", "open", "", 1},
+	{"e", "", "expand", 6}, // comments only
+	{"r", "", "reply", 7},
+	{"b", "bell", "", 5},
+	{"v", "comments", "checks", 4},
+	{"?", "help", "", 0},
 }
 
 // hintLine renders as many footer hints as fit in w cells, for the list
