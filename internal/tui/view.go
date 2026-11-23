@@ -76,9 +76,10 @@ func (m *Model) lines(w, h int) []line {
 	// On a short screen the header's last rows (labels, alerts, comments)
 	// give way, so the list and the footer keep their place.
 	hdr := m.header(w)
-	out = append(out, hdr[:min(len(hdr), max(h-len(out)-1-4, 2))]...)
-	// The list sits in a box: border, column header, rows, border. The
-	// box ends after its last row; the footer stays at the bottom.
+	out = append(out, hdr[:min(len(hdr), max(h-len(out)-1-5, 1))]...)
+	// The list's tabs, then its box: border, column header, rows, border.
+	// The box ends after its last row; the footer stays at the bottom.
+	out = append(out, m.listTabs())
 	rows := max(h-len(out)-1-3, 1)
 	var b []line
 	switch {
@@ -96,39 +97,61 @@ func (m *Model) lines(w, h int) []line {
 	if len(b) == 0 {
 		content = append(content, line{})
 	}
-	list := box(content, w, sBorder, "", false)
-	list[0] = m.listTitle(w)
-	out = append(out, list...)
+	out = append(out, box(content, w, sBorder, "", false)...)
 	for len(out) < h-1 {
 		out = append(out, line{})
 	}
 	return append(out, m.footer(w))
 }
 
-// listTitle is the list box's top border, naming the two lists a PR has,
-// comments first, with the one shown highlighted: v switches between them.
-func (m *Model) listTitle(w int) line {
-	name := func(text string, on bool) seg {
-		if on {
-			if !m.Color {
-				return seg{"[" + text + "]", ""}
+// listTabs is the row above the list naming the two lists a PR has,
+// comments first, as tabs: the one shown is a highlighted chip. Each
+// carries its own count: new comments, and failing (else running) jobs.
+func (m *Model) listTabs() line {
+	tab := func(name string, count seg, on bool) line {
+		switch {
+		case on && m.Color:
+			l := line{{" " + name, bgAccent + sBold + sOnAccent}}
+			if count.text != "" {
+				l = append(l, seg{" " + count.text, bgAccent + sBold + sOnAccent})
 			}
-			return seg{" " + text + " ", bgAccent + sBold + sOnAccent}
+			return append(l, seg{" ", bgAccent})
+		case on:
+			if count.text != "" {
+				name += " " + count.text
+			}
+			return line{{"[" + name + "]", ""}}
 		}
-		return seg{" " + text + " ", sMuted}
+		l := line{{" " + name, sMuted + sBold}}
+		if count.text != "" {
+			l = append(l, seg{" ", ""}, count)
+		}
+		return append(l, seg{" ", ""})
 	}
-	comments := "Comments"
+	var comments, checks seg
 	if it := m.current(); it != nil {
 		if k := m.newShown(it); k > 0 {
-			comments += " " + strconv.Itoa(k) + " new"
+			comments = seg{strconv.Itoa(k) + " new", sNew + sBold}
+		}
+		_, failed := model.Progress(it.Checks)
+		running := 0
+		for _, c := range it.Checks {
+			if c.State == model.Running || c.State == model.Pending {
+				running++
+			}
+		}
+		switch {
+		case failed > 0:
+			checks = seg{strconv.Itoa(failed) + " failing", sRed + sBold}
+		case running > 0:
+			checks = seg{strconv.Itoa(running) + " running", sYellow + sBold}
 		}
 	}
-	l := line{{"┌─", sBorder}, name(comments, m.view == viewComments), {"─", sBorder}, name("Checks", m.view == viewChecks)}
-	l = append(l, seg{" v switches ", sDim})
-	if n := w - 1 - l.width(); n > 0 {
-		l = append(l, seg{strings.Repeat("─", n), sBorder})
-	}
-	return append(cut(l, w-1), seg{"┐", sBorder})
+	l := line{{" ", ""}}
+	l = append(l, tab("Comments", comments, m.view == viewComments)...)
+	l = append(l, seg{"  ", ""})
+	l = append(l, tab("Checks", checks, m.view == viewChecks)...)
+	return append(l, seg{"   v switches", sDim})
 }
 
 // newShown counts the comments of it shown as new in this visit.

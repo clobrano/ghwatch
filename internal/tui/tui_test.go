@@ -384,17 +384,17 @@ func TestSelectionFollowsCheckAcrossGroups(t *testing.T) {
 func TestGroupScrollShowsHeader(t *testing.T) {
 	m, _ := newModel()
 	// 5 list rows for 7 entries: the passed group starts below the fold.
-	rows := m.View(90, 15)
+	rows := m.View(90, 16)
 	if body := listRows(rows); len(body) != 5 || strings.Contains(strings.Join(body, "\n"), "lint") {
 		t.Fatalf("want 5 rows without lint:\n%s", strings.Join(body, "\n"))
 	}
 	keys(m, "G")
-	body := strings.Join(listRows(m.View(90, 15)), "\n")
+	body := strings.Join(listRows(m.View(90, 16)), "\n")
 	if !strings.Contains(body, "Passed · 1") || !strings.Contains(body, "›√ lint") {
 		t.Errorf("body =\n%s", body)
 	}
 	keys(m, "g", "g")
-	if first := listRows(m.View(90, 15))[0]; !strings.HasPrefix(first, " Failed · 1") {
+	if first := listRows(m.View(90, 16))[0]; !strings.HasPrefix(first, " Failed · 1") {
 		t.Errorf("scrolled back, first body row = %q", first)
 	}
 }
@@ -691,7 +691,7 @@ func TestLabels(t *testing.T) {
 	if got := headerRow(rows, "labels"); got != " labels:   lgtm · do-not-merge/hold" {
 		t.Errorf("label row = %q", got)
 	}
-	if top := boxTop(rows); !strings.HasPrefix(rows[top-1], " labels:") || !strings.HasPrefix(listRows(rows)[0], " Failed · 1") {
+	if top := boxTop(rows); !strings.HasPrefix(rows[top-2], " labels:") || !strings.HasPrefix(listRows(rows)[0], " Failed · 1") {
 		t.Errorf("rows around the labels:\n%s", strings.Join(rows, "\n"))
 	}
 	// No labels: no labels row.
@@ -909,7 +909,7 @@ func TestCommentsList(t *testing.T) {
 	if !strings.Contains(rows[0], "│  2 new comments") || !strings.Contains(rows[1], "#123 lease-race "+bellIcon+" "+commentMark()+" 2") {
 		t.Errorf("title = %q, tabs = %q", rows[0], rows[1])
 	}
-	if c := headerRow(rows, "comments"); c != " comments: 2 new comments · 2 unresolved threads" || !strings.Contains(rows[boxTop(rows)], "Comments 2 new") {
+	if c := headerRow(rows, "comments"); c != " comments: 2 new comments · 2 unresolved threads" || !strings.Contains(rows[boxTop(rows)-1], "Comments 2 new") {
 		t.Errorf("comments row = %q", c)
 	}
 
@@ -1051,7 +1051,7 @@ func TestOpensOnComments(t *testing.T) {
 	m.SetConnected(true)
 	m.SetSnapshot(withComments(snapshot()))
 	rows := m.View(100, 20)
-	if !strings.Contains(rows[boxTop(rows)], "[Comments 2 new]") || !strings.HasPrefix(listRows(rows)[0], " New · 2") {
+	if !strings.Contains(rows[boxTop(rows)-1], "[Comments 2 new]") || !strings.HasPrefix(listRows(rows)[0], " New · 2") {
 		t.Errorf("first screen:\n%s", strings.Join(rows, "\n"))
 	}
 }
@@ -1326,5 +1326,32 @@ func TestShortScreenKeepsFooter(t *testing.T) {
 	}
 	if top := boxTop(rows); top < 0 || len(listRows(rows)) == 0 {
 		t.Errorf("no list on a short screen:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+func TestListTabs(t *testing.T) {
+	m, _ := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	tabs := func() string { rows := m.View(100, 24); return rows[boxTop(rows)-1] }
+	// Checks shown: its tab is bracketed (highlighted with colors), and
+	// each tab carries its own count.
+	if got := tabs(); got != "  Comments 2 new   [Checks 1 failing]   v switches" {
+		t.Errorf("checks tabs = %q", got)
+	}
+	keys(m, "v")
+	if got := tabs(); got != " [Comments 2 new]   Checks 1 failing    v switches" {
+		t.Errorf("comments tabs = %q", got)
+	}
+	// Nothing failing: the running jobs; nothing new: no count.
+	s := snapshot()
+	s.Items[0].Checks[1].State = model.Passed
+	m.SetSnapshot(s)
+	if got := tabs(); got != " [Comments]   Checks 2 running    v switches" {
+		t.Errorf("tabs = %q", got)
+	}
+	row := boxTop(m.View(100, 24)) - 1
+	m.Color = true
+	if got := m.View(100, 24)[row]; !strings.Contains(got, bgAccent+sBold+sOnAccent+" Comments") {
+		t.Errorf("active tab not highlighted: %q", got)
 	}
 }

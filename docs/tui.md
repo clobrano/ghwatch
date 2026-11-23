@@ -38,10 +38,12 @@ it. From top to bottom:
     (darkened with the light flavor).
 
   On a short screen the last rows give way, so the list keeps its room.
-- **List:** a box that ends after its last row. Each PR has two lists, its comments and its jobs, and `v`
-  switches between them. The box's top border names both, comments
-  first, with the one shown highlighted and the number of new comments
-  (`Comments 3 new`). ghwatch opens on the comments.
+- **List:** each PR has two lists, its comments and its jobs, and `v`
+  switches between them. A row of tabs above the list names both,
+  comments first, with the one shown highlighted; each tab carries its
+  own count: new comments, and failing jobs (or running ones while none
+  has failed), e.g. `Comments 3 new   Checks 2 failing`. The list sits
+  in a box that ends after its last row. ghwatch opens on the comments.
 - **Job list:** a Check / Time / Source header and the selected job
   highlighted. Jobs are split into groups, each under a
   header with its count: **Failed**, then **Running** (including
