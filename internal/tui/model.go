@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,8 @@ type Backend interface {
 	Open(url string) error
 	// Copy puts text on the clipboard.
 	Copy(text string) error
+	// Edit lets the user edit text in their editor and returns the result.
+	Edit(text string) (string, error)
 }
 
 type mode int
@@ -80,6 +83,15 @@ type Model struct {
 	// view is the list shown: viewChecks or viewComments.
 	view int
 	csel map[string]selection // selected comment thread per item
+	// drafts holds replies not posted yet, by item ID, NUL, thread ID: a
+	// declined or failed reply reopens with its text.
+	drafts map[string]string
+	// cscroll is how far the selected comment, cscrollKey, is scrolled
+	// with J/K, in lines.
+	cscroll    int
+	cscrollKey string
+	// helpPage is the help panel's page: 0 keys, 1 legend.
+	helpPage int
 	// expanded holds the threads (item ID, NUL, thread ID) showing all
 	// their comments.
 	expanded map[string]bool
@@ -153,6 +165,16 @@ func (m *Model) SetSnapshot(s *model.Snapshot) {
 
 // SetConnected records the daemon connection state.
 func (m *Model) SetConnected(ok bool) { m.connected = ok }
+
+// Result shows the outcome of a command.
+// Done shows the outcome of a command sent with Backend.Send; a posted
+// reply's draft is discarded.
+func (m *Model) Done(cmd ipc.Command, info string, err error) {
+	if cmd.Op == ipc.OpReply && err == nil {
+		delete(m.drafts, cmd.ID+"\x00"+cmd.Thread)
+	}
+	m.Result(info, err)
+}
 
 // Result shows the outcome of a command.
 func (m *Model) Result(info string, err error) {
@@ -332,7 +354,13 @@ func (m *Model) Key(k string) {
 	case modeEvents:
 		m.keyEvents(k)
 	case modeHelp:
-		m.mode = modeNormal
+		// tab flips between the keys and the legend; any other key closes.
+		switch k {
+		case kTab, kShiftTab, kLeft, kRight, "h", "l":
+			m.helpPage = 1 - m.helpPage
+		default:
+			m.mode = modeNormal
+		}
 	case modeConfirm:
 		m.mode = modeNormal
 		if k == "y" || k == "Y" {
@@ -381,6 +409,14 @@ func (m *Model) keyNormal(k string) {
 		m.move(-1 << 20)
 	case "v":
 		m.view = 1 - m.view
+	case "J", "K":
+		if m.view == viewComments {
+			if k == "J" {
+				m.scrollComment(1)
+			} else {
+				m.scrollComment(-1)
+			}
+		}
 	case "e":
 		if m.view == viewComments {
 			m.toggleThread()
@@ -453,10 +489,18 @@ func (m *Model) keyNormal(k string) {
 		if it := m.current(); it != nil {
 			m.confirm("Unwatch "+ref(*it)+" in every client?", ipc.Command{Op: ipc.OpUnwatch, ID: it.ID})
 		}
-	case "r":
+	case "p":
 		m.send(ipc.Command{Op: ipc.OpPoll})
+	case "r":
+		if m.view == viewComments {
+			m.reply()
+		} else {
+			m.setFlash("r replies to a comment thread: press v to see them", true)
+		}
 	case "R":
-		if it := m.current(); it != nil {
+		if m.view == viewComments {
+			m.resolve()
+		} else if it := m.current(); it != nil {
 			if _, failed := model.Progress(it.Checks); failed == 0 {
 				m.setFlash("no failed checks to re-run", true)
 			} else {
@@ -466,8 +510,59 @@ func (m *Model) keyNormal(k string) {
 	case "/":
 		m.mode, m.input, m.findSel = modeFind, nil, 0
 	case "?":
-		m.mode = modeHelp
+		m.mode, m.helpPage = modeHelp, 0
 	}
+}
+
+// reply opens the user's editor on a reply to the selected thread (on the
+// conversation, a new comment on the PR), then asks before posting it.
+func (m *Model) reply() {
+	it, t := m.selectedThread()
+	if t == nil {
+		return
+	}
+	if !m.connected {
+		m.setFlash("disconnected from the daemon; try again when connected", true)
+		return
+	}
+	if m.drafts == nil {
+		m.drafts = map[string]string{}
+	}
+	k := it.ID + "\x00" + t.ID
+	text, err := m.backend.Edit(m.drafts[k])
+	if err != nil {
+		m.setFlash(err.Error(), true)
+		return
+	}
+	if text = strings.TrimSpace(text); text == "" {
+		delete(m.drafts, k)
+		m.setFlash("nothing written: no reply posted", false)
+		return
+	}
+	m.drafts[k] = text
+	what := "Reply on " + t.Name()
+	if t.ID == model.ConversationID {
+		what = "Comment on " + ref(*it)
+	}
+	lines := plural(strings.Count(text, "\n")+1, "line")
+	m.confirm(fmt.Sprintf("%s (%s)?", what, lines), ipc.Command{Op: ipc.OpReply, ID: it.ID, Thread: t.ID, Body: text})
+}
+
+// resolve asks to resolve the selected review thread, or to unresolve it.
+func (m *Model) resolve() {
+	it, t := m.selectedThread()
+	if t == nil {
+		return
+	}
+	if t.ID == model.ConversationID {
+		m.setFlash("the conversation cannot be resolved: select a thread on code", true)
+		return
+	}
+	on, what := !t.Resolved, "Resolve "
+	if t.Resolved {
+		what = "Unresolve "
+	}
+	m.confirm(what+t.Name()+"?", ipc.Command{Op: ipc.OpResolve, ID: it.ID, Thread: t.ID, On: &on})
 }
 
 func (m *Model) confirm(msg string, cmd ipc.Command) {

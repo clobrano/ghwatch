@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,6 +16,20 @@ type fakeBackend struct {
 	sent   []ipc.Command
 	opened []string
 	copied []string
+	// edits are the texts the fake editor returns, in turn; edited
+	// records the texts it was given.
+	edits  []string
+	edited []string
+}
+
+func (f *fakeBackend) Edit(text string) (string, error) {
+	f.edited = append(f.edited, text)
+	if len(f.edits) == 0 {
+		return text, errors.New("no editor")
+	}
+	out := f.edits[0]
+	f.edits = f.edits[1:]
+	return out, nil
 }
 
 func (f *fakeBackend) Send(c ipc.Command)  { f.sent = append(f.sent, c) }
@@ -70,9 +85,10 @@ func TestView(t *testing.T) {
 		"× #123 lease-race " + bellIcon,
 		"* #131 sbd-timeout",
 		"M osac#58 docs",
-		"org/repo#123  Fix lease renewal race",
+		"[OPEN] Fix lease renewal race  org/repo#123",
 		"@clobrano",
-		"head a1b2c3d · pushed 52m ago · 2/4 done · 1 failing · alerts on",
+		" CI:       2/4 done · 1 failing, all required · 2 running · on a1b2c3d, pushed 52m ago",
+		" alerts:   on for the PR",
 		"running 23m",
 		"pending",
 		" opt",
@@ -95,8 +111,13 @@ func TestView(t *testing.T) {
 			t.Errorf("list row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
 		}
 	}
-	if !strings.HasPrefix(rows[5], "┌") || !strings.Contains(rows[6], "Check") || !strings.Contains(rows[6], "Time") || !strings.Contains(rows[6], "Source") {
-		t.Errorf("box top %q, column header %q", rows[5], rows[6])
+	top := boxTop(rows)
+	if top < 0 || !strings.Contains(rows[top+1], "Check") || !strings.Contains(rows[top+1], "Time") || !strings.Contains(rows[top+1], "Source") {
+		t.Errorf("box top at %d:\n%s", top, strings.Join(rows, "\n"))
+	}
+	// The box ends after its last row; the footer stays at the bottom.
+	if !strings.HasPrefix(rows[top+2+len(want)], "└") || !strings.Contains(rows[17], "connected") {
+		t.Errorf("box or footer misplaced:\n%s", strings.Join(rows, "\n"))
 	}
 	if len(body) > 6 && !strings.Contains(body[6], "2m") {
 		t.Errorf("lint row lacks its duration: %q", body[6])
@@ -157,9 +178,9 @@ func TestNavigationAndActions(t *testing.T) {
 	if len(be.sent) != 1 || be.sent[0].Op != ipc.OpAlerts || *be.sent[0].On != false {
 		t.Errorf("n sent %+v", be.sent)
 	}
-	keys(m, "r")
+	keys(m, "p")
 	if be.sent[1].Op != ipc.OpPoll {
-		t.Errorf("r sent %+v", be.sent[1])
+		t.Errorf("p sent %+v", be.sent[1])
 	}
 	keys(m, "d", "n")
 	if len(be.sent) != 2 {
@@ -267,7 +288,7 @@ func TestEventsPanel(t *testing.T) {
 func TestDisconnected(t *testing.T) {
 	m, be := newModel()
 	m.SetConnected(false)
-	keys(m, "r")
+	keys(m, "p")
 	if len(be.sent) != 0 {
 		t.Error("command sent while disconnected")
 	}
@@ -310,7 +331,7 @@ func TestHelpFitsInColumns(t *testing.T) {
 	m, _ := newModel()
 	keys(m, "?")
 	screen := strings.Join(m.View(120, 40), "\n")
-	if !strings.Contains(screen, " Keybindings ") {
+	if !strings.Contains(screen, "[Keybindings]") {
 		t.Errorf("no title chip:\n%s", screen)
 	}
 	for _, sec := range helpSections {
@@ -318,8 +339,8 @@ func TestHelpFitsInColumns(t *testing.T) {
 			t.Errorf("help lacks section %q", sec.title)
 		}
 		for _, r := range sec.keys {
-			if !strings.Contains(screen, r[1]) {
-				t.Errorf("help lacks %q:\n%s", r[1], screen)
+			if !strings.Contains(screen, r.desc) {
+				t.Errorf("help lacks %q:\n%s", r.desc, screen)
 			}
 		}
 	}
@@ -363,17 +384,17 @@ func TestSelectionFollowsCheckAcrossGroups(t *testing.T) {
 func TestGroupScrollShowsHeader(t *testing.T) {
 	m, _ := newModel()
 	// 5 list rows for 7 entries: the passed group starts below the fold.
-	rows := m.View(90, 15)
+	rows := m.View(90, 16)
 	if body := listRows(rows); len(body) != 5 || strings.Contains(strings.Join(body, "\n"), "lint") {
 		t.Fatalf("want 5 rows without lint:\n%s", strings.Join(body, "\n"))
 	}
 	keys(m, "G")
-	body := strings.Join(listRows(m.View(90, 15)), "\n")
+	body := strings.Join(listRows(m.View(90, 16)), "\n")
 	if !strings.Contains(body, "Passed · 1") || !strings.Contains(body, "›√ lint") {
 		t.Errorf("body =\n%s", body)
 	}
 	keys(m, "g", "g")
-	if first := listRows(m.View(90, 15))[0]; !strings.HasPrefix(first, " Failed · 1") {
+	if first := listRows(m.View(90, 16))[0]; !strings.HasPrefix(first, " Failed · 1") {
 		t.Errorf("scrolled back, first body row = %q", first)
 	}
 }
@@ -454,8 +475,8 @@ func TestJobBell(t *testing.T) {
 	if strings.Contains(body[1], bellIcon) {
 		t.Errorf("unwatched job has a bell: %q", body[1])
 	}
-	if !strings.Contains(rows[1], "#123 lease-race "+bellIcon) || !strings.Contains(rows[4], bellIcon+" 1 job") || strings.Contains(rows[4], "alerts on") {
-		t.Errorf("tab = %q, header = %q", rows[1], rows[4])
+	if a := headerRow(rows, "alerts"); !strings.Contains(rows[1], "#123 lease-race "+bellIcon) || a != " alerts:   "+bellIcon+" 1 job" {
+		t.Errorf("tab = %q, alerts row = %q", rows[1], a)
 	}
 	keys(m, "b")
 	if !*be.sent[0].On || *be.sent[1].On {
@@ -486,8 +507,8 @@ func TestMutePR(t *testing.T) {
 	s.Items[0].Muted = true
 	m.SetSnapshot(s)
 	rows := m.View(90, 16)
-	if !strings.Contains(rows[4], bellIcon+" muted (m restores)") || strings.Contains(rows[4], "alerts on") {
-		t.Errorf("header = %q", rows[4])
+	if a := headerRow(rows, "alerts"); a != " alerts:   "+bellIcon+" muted (m restores)" {
+		t.Errorf("alerts row = %q", a)
 	}
 	if !strings.Contains(rows[1], "#123 lease-race "+bellIcon) {
 		t.Errorf("tab = %q", rows[1])
@@ -552,7 +573,7 @@ func TestTitleBar(t *testing.T) {
 	s.PolledAt = now.Add(-42 * time.Second)
 	m.SetSnapshot(s)
 	got := m.View(100, 16)[0]
-	for _, want := range []string{" GHWATCH  GitHub PR watcher · 3 PRs ×1 *1 M1 · " + bellIcon + " 2", "polled 42s ago "} {
+	for _, want := range []string{" GHWATCH  GitHub PR watcher · 3 PRs: 1 failing · 1 running · 1 merged", "polled 42s ago "} {
 		if !strings.Contains(got, want) {
 			t.Errorf("title = %q, lacks %q", got, want)
 		}
@@ -566,7 +587,7 @@ func TestTitleBar(t *testing.T) {
 	s.Items = s.Items[:1]
 	m.SetSnapshot(s)
 	got = m.View(100, 16)[0]
-	for _, want := range []string{"watcher · 1 PR ×1", "muted", "last poll 42s ago "} {
+	for _, want := range []string{"watcher · 1 PR: 1 failing · muted", "last poll 42s ago "} {
 		if !strings.Contains(got, want) {
 			t.Errorf("title = %q, lacks %q", got, want)
 		}
@@ -587,20 +608,20 @@ func TestMergeQueue(t *testing.T) {
 	m.SetSnapshot(s)
 	keys(m, "2")
 	rows := m.View(130, 16)
-	if !strings.Contains(rows[0], "3 PRs ×1 Q1 M1") {
+	if !strings.Contains(rows[0], "3 PRs: 1 failing · 1 queued · 1 merged") {
 		t.Errorf("title = %q", rows[0])
 	}
 	if !strings.Contains(rows[1], "Q #131 sbd-timeout") {
 		t.Errorf("tabs = %q", rows[1])
 	}
-	if !strings.Contains(rows[4], "in merge queue, checks running, 2nd in line, 12m ago, ~8m left") {
-		t.Errorf("header = %q", rows[4])
+	if !strings.HasPrefix(headerRow(rows, "CI"), " CI:       in merge queue, checks running, 2nd in line, 12m ago, ~8m left · 1/1 done") {
+		t.Errorf("CI row = %q", headerRow(rows, "CI"))
 	}
 
 	s.Items[1].MergeQueue = &model.MergeQueue{State: "queued", Position: 1}
 	m.SetSnapshot(s)
-	if got := m.View(130, 16)[4]; !strings.Contains(got, "queued for merge, 1st in line") {
-		t.Errorf("header = %q", got)
+	if got := headerRow(m.View(130, 16), "CI"); !strings.Contains(got, "queued for merge, 1st in line") {
+		t.Errorf("CI row = %q", got)
 	}
 	for n, want := range map[int]string{1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 11: "11th", 12: "12th", 13: "13th", 21: "21st", 22: "22nd"} {
 		if got := ordinal(n); got != want {
@@ -667,16 +688,16 @@ func TestLabels(t *testing.T) {
 	s.Items[0].Labels = []model.Label{{Name: "lgtm", Color: "0e8a16"}, {Name: "do-not-merge/hold", Color: "fbca04"}}
 	m.SetSnapshot(s)
 	rows := m.View(90, 16)
-	if rows[5] != " labels: lgtm · do-not-merge/hold" {
-		t.Errorf("label row = %q", rows[5])
+	if got := headerRow(rows, "labels"); got != " labels:   lgtm · do-not-merge/hold" {
+		t.Errorf("label row = %q", got)
 	}
-	if !strings.HasPrefix(rows[6], "┌") || !strings.HasPrefix(listRows(rows)[0], " Failed · 1") {
-		t.Errorf("rows after labels = %q, %q", rows[6], listRows(rows)[0])
+	if top := boxTop(rows); !strings.HasPrefix(rows[top-2], " labels:") || !strings.HasPrefix(listRows(rows)[0], " Failed · 1") {
+		t.Errorf("rows around the labels:\n%s", strings.Join(rows, "\n"))
 	}
-	// No labels: no extra row.
+	// No labels: no labels row.
 	keys(m, "2")
-	if rows := m.View(90, 16); !strings.HasPrefix(rows[5], "┌") {
-		t.Errorf("row 5 without labels = %q", rows[5])
+	if got := headerRow(m.View(90, 16), "labels"); got != "" {
+		t.Errorf("labels row without labels = %q", got)
 	}
 
 	// Labels are bold in their color: kept when readable, lightened just
@@ -705,18 +726,42 @@ func TestLabels(t *testing.T) {
 	}
 }
 
-// listRows returns the job list rows: what lies between the column
-// header's separator and the box's bottom border, without the side borders.
+// headerRow returns the header row with the given label ("CI", "alerts"),
+// or "".
+func headerRow(rows []string, label string) string {
+	for _, r := range rows {
+		if strings.HasPrefix(r, " "+label+":") {
+			return r
+		}
+	}
+	return ""
+}
+
+// boxTop returns the row of the list box's top border, or -1.
+func boxTop(rows []string) int {
+	for i, r := range rows {
+		if strings.HasPrefix(r, "┌") {
+			return i
+		}
+	}
+	return -1
+}
+
+// listRows returns the list's rows: what lies between the column header
+// (the line after the box's top border) and the box's bottom border,
+// without the side borders.
 func listRows(rows []string) []string {
 	var out []string
-	in := false
+	state := 0 // 0: before the box, 1: on its column header, 2: in its rows
 	for _, r := range rows {
 		switch {
-		case strings.HasPrefix(r, "│───"):
-			in = true
-		case strings.HasPrefix(r, "└"):
+		case state == 0 && strings.HasPrefix(r, "┌"):
+			state = 1
+		case state == 1:
+			state = 2
+		case state == 2 && strings.HasPrefix(r, "└"):
 			return out
-		case in:
+		case state == 2:
 			out = append(out, strings.TrimSuffix(strings.TrimPrefix(r, "│"), "│"))
 		}
 	}
@@ -775,28 +820,28 @@ func TestFooterHints(t *testing.T) {
 	m, _ := newModel()
 	// Wide: every hint, in order, saying what each key does.
 	wide := m.View(220, 16)[15]
-	want := "h/l prev/next PR · j/k next/prev job · v comments · enter open job · o open PR · y/Y copy PR/job link · n alert PR · b alert job · N alert settings · / find job · ? all keys"
+	want := "h/l PR · j/k job · enter open · b bell · v comments · ? help"
 	if !strings.Contains(wide, want) {
 		t.Errorf("wide footer = %q", wide)
 	}
-	// The comments list names its own rows.
+	// The comments list has its own keys.
 	keys(m, "v")
-	want = "h/l prev/next PR · j/k next/prev thread · v checks · enter open comment · e expand · o open PR · y/Y copy PR/comment link · n alert PR · b alert thread · N alert settings · / find thread · ? all keys"
-	if wide := m.View(240, 16)[15]; !strings.Contains(wide, want) {
+	want = "h/l PR · j/k thread · enter open · e expand · r reply · b bell · v checks · ? help"
+	if wide := m.View(220, 16)[15]; !strings.Contains(wide, want) {
 		t.Errorf("wide footer, comments = %q", wide)
 	}
+	// 60 columns: the least important hints give way, the line fits beside
+	// the connection status, and "? help" stays.
+	narrow := m.View(60, 16)[15]
+	if !strings.Contains(narrow, "? help") || !strings.Contains(narrow, "enter open") || !strings.Contains(narrow, "connected") {
+		t.Errorf("60-column footer = %q", narrow)
+	}
+	if strings.Contains(narrow, "expand") || strings.Contains(narrow, "…") {
+		t.Errorf("60-column footer keeps a low-priority hint or cuts one: %q", narrow)
+	}
 	keys(m, "v")
-	// 80 columns: the least important hints give way, the line fits beside
-	// the connection status, and "? all keys" stays.
-	narrow := m.View(80, 16)[15]
-	if !strings.Contains(narrow, "? all keys") || !strings.Contains(narrow, "enter open job") || !strings.Contains(narrow, "connected") {
-		t.Errorf("80-column footer = %q", narrow)
-	}
-	if strings.Contains(narrow, "alert settings") || strings.Contains(narrow, "…") {
-		t.Errorf("80-column footer keeps a low-priority hint or cuts one: %q", narrow)
-	}
-	// Very narrow: only "? all keys" is left.
-	if got := hintLine(14, viewChecks).plain(); got != "  ? all keys" {
+	// Very narrow: only "? help" is left.
+	if got := hintLine(10, viewChecks).plain(); got != "  ? help" {
 		t.Errorf("tiny footer = %q", got)
 	}
 	// Keys stand out in the accent.
@@ -811,7 +856,7 @@ func TestUnseenMarks(t *testing.T) {
 	s.Items[1].Unseen = true
 	m.SetSnapshot(s)
 	rows := m.View(120, 16)
-	if !strings.Contains(rows[0], "•1 new") {
+	if !strings.Contains(rows[0], "│  1 changed") {
 		t.Errorf("title = %q", rows[0])
 	}
 	if !strings.Contains(rows[1], "#131 sbd-timeout •") || strings.Contains(rows[1], "lease-race •") {
@@ -861,11 +906,11 @@ func TestCommentsList(t *testing.T) {
 	m, be := newModel()
 	m.SetSnapshot(withComments(snapshot()))
 	rows := m.View(100, 20)
-	if !strings.Contains(rows[0], commentMark()+" 2") || !strings.Contains(rows[1], "#123 lease-race "+bellIcon+" "+commentMark()+" 2") {
+	if !strings.Contains(rows[0], "│  2 new comments") || !strings.Contains(rows[1], "#123 lease-race "+bellIcon+" "+commentMark()+" 2") {
 		t.Errorf("title = %q, tabs = %q", rows[0], rows[1])
 	}
-	if !strings.Contains(rows[4], "alerts on · 2 unresolved threads") || !strings.Contains(rows[5], "Comments 2 new") {
-		t.Errorf("header = %q", rows[4])
+	if c := headerRow(rows, "comments"); c != " comments: 2 new comments · 2 unresolved threads" || !strings.Contains(rows[boxTop(rows)-1], "Comments 2 new") {
+		t.Errorf("comments row = %q", c)
 	}
 
 	keys(m, "v")
@@ -873,14 +918,14 @@ func TestCommentsList(t *testing.T) {
 	if !strings.Contains(strings.Join(rows, "\n"), "[Comments 2 new]") {
 		t.Errorf("list title missing:\n%s", strings.Join(rows, "\n"))
 	}
-	want := []string{" New · 2", "›• conversation 1 new  about c2", " • a.go:3 1 new  about r2", " Open · 1", " c c.go:1 (outdated) · 1", " Resolved · 1", " √ b.go:7 · 1"}
+	want := []string{" New · 2", "›• conversation · 9 · 1 new  about c2", " • a.go:3 · 2 · 1 new  about r2", " Open · 1", " c c.go:1 outdated · 1", " Resolved · 1", " √ b.go:7 · 1"}
 	body := listRows(rows)
 	for i, prefix := range want {
 		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
 			t.Errorf("row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
 		}
 	}
-	if !strings.Contains(body[1], "5m ago  ci-robot") {
+	if f := strings.Fields(body[1]); f[len(f)-3] != "ci-robot" || f[len(f)-2] != "5m" {
 		t.Errorf("row 1 = %q", body[1])
 	}
 
@@ -953,7 +998,7 @@ func TestExpandThread(t *testing.T) {
 	}
 	keys(m, "e") // expand a.go:3
 	body := listRows(m.View(100, 24))
-	want := []string{" New · 2", " • conversation", "›• a.go:3 1 new", "   │   ⋯ 2 earlier comments on GitHub",
+	want := []string{" New · 2", " • conversation", "›• a.go:3 · 4 · 1 new", "   │   a.go:3", "   │   ⋯ 2 earlier comments on GitHub",
 		"   │   me · 2h00m ago", "   │     about r1", "   │ • alice · 10m ago", "   │     about r2", "   │", "   │     second paragraph", " Open · 1"}
 	for i, prefix := range want {
 		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
@@ -966,7 +1011,7 @@ func TestExpandThread(t *testing.T) {
 	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" {
 		t.Fatalf("two j from the thread selected %+v", c)
 	}
-	if body := listRows(m.View(100, 24)); !strings.HasPrefix(body[6], "   › • alice") || strings.HasPrefix(body[2], "›") {
+	if body := listRows(m.View(100, 24)); !strings.HasPrefix(body[7], "   › • alice") || strings.HasPrefix(body[2], "›") {
 		t.Errorf("selected comment not marked:\n%s", strings.Join(body, "\n"))
 	}
 	keys(m, kEnter, "Y", "b")
@@ -1006,7 +1051,7 @@ func TestOpensOnComments(t *testing.T) {
 	m.SetConnected(true)
 	m.SetSnapshot(withComments(snapshot()))
 	rows := m.View(100, 20)
-	if !strings.Contains(rows[5], "[Comments 2 new]") || !strings.HasPrefix(listRows(rows)[0], " New · 2") {
+	if !strings.Contains(rows[boxTop(rows)-1], "[Comments 2 new]") || !strings.HasPrefix(listRows(rows)[0], " New · 2") {
 		t.Errorf("first screen:\n%s", strings.Join(rows, "\n"))
 	}
 }
@@ -1039,16 +1084,23 @@ func TestThemes(t *testing.T) {
 func TestLifecycleChip(t *testing.T) {
 	m, _ := newModel()
 	rows := m.View(100, 16)
-	if !strings.HasPrefix(rows[3], " [OPEN] org/repo#123  Fix lease renewal race") {
+	if !strings.HasPrefix(rows[3], " [OPEN] Fix lease renewal race  org/repo#123") {
 		t.Errorf("open header = %q", rows[3])
+	}
+	// A long title gives way, the reference does not.
+	s := snapshot()
+	s.Items[0].Title = strings.Repeat("very long title ", 10)
+	m.SetSnapshot(s)
+	if got := m.View(80, 16)[3]; !strings.Contains(got, "…  org/repo#123") {
+		t.Errorf("long title header = %q", got)
 	}
 	keys(m, "3")
 	rows = m.View(100, 16)
-	if !strings.HasPrefix(rows[3], " [MERGED] osac/osac#58  Docs") || strings.Contains(rows[4], "merged") {
+	if !strings.HasPrefix(rows[3], " [MERGED] Docs  osac/osac#58") || strings.Contains(rows[4], "merged") {
 		t.Errorf("merged header = %q / %q", rows[3], rows[4])
 	}
 	// Not fetched yet: no state to show.
-	s := snapshot()
+	s = snapshot()
 	s.Items[2].HeadSHA = ""
 	m.SetSnapshot(s)
 	if rows := m.View(100, 16); strings.Contains(rows[3], "[") {
@@ -1061,6 +1113,286 @@ func TestLifecycleChip(t *testing.T) {
 			if r := contrast(f.base, c); r < 4.5 {
 				t.Errorf("%s chip %s: contrast %.1f", name, c, r)
 			}
+		}
+	}
+}
+
+func TestReply(t *testing.T) {
+	m, be := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	keys(m, "r")
+	if len(be.edited) != 0 || !strings.Contains(m.View(100, 20)[19], "press v") {
+		t.Fatalf("r in the checks list: edited %v, footer %q", be.edited, m.View(100, 20)[19])
+	}
+
+	// On the conversation: a new comment, asked before posting.
+	be.edits = []string{"Looks good\nthanks\n"}
+	keys(m, "v", "r")
+	if m.mode != modeConfirm || m.confirmMsg != "Comment on org/repo#123 (2 lines)?" {
+		t.Fatalf("mode %v, confirm %q", m.mode, m.confirmMsg)
+	}
+	sent := len(be.sent)
+	keys(m, "n") // declined: kept as a draft
+	if len(be.sent) != sent {
+		t.Fatalf("declined reply sent: %+v", be.sent[sent:])
+	}
+	be.edits = []string{"Looks good, thanks"}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "Looks good\nthanks" {
+		t.Errorf("draft not reopened: %q", be.edited)
+	}
+	keys(m, "y")
+	last := be.sent[len(be.sent)-1]
+	if last.Op != ipc.OpReply || last.Thread != model.ConversationID || last.Body != "Looks good, thanks" {
+		t.Fatalf("sent %+v", last)
+	}
+	m.Done(last, "commented on org/repo#123", nil) // posted: the draft goes
+	be.edits = []string{""}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "" || m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "nothing written") {
+		t.Errorf("after posting: editor got %q, mode %v", be.edited[len(be.edited)-1], m.mode)
+	}
+
+	// On a code thread: a reply in it; a failed post keeps the draft.
+	be.edits = []string{"done"}
+	keys(m, "j", "r")
+	if m.confirmMsg != "Reply on a.go:3 (1 line)?" {
+		t.Fatalf("confirm %q", m.confirmMsg)
+	}
+	keys(m, "y")
+	last = be.sent[len(be.sent)-1]
+	m.Done(last, "", errors.New("github: 403 forbidden"))
+	be.edits = []string{"done"}
+	keys(m, "r")
+	if be.edited[len(be.edited)-1] != "done" {
+		t.Errorf("failed reply's draft lost: %q", be.edited)
+	}
+	keys(m, kEsc)
+
+	// The editor failing says so.
+	be.edits = nil
+	keys(m, "r")
+	if m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "no editor") {
+		t.Errorf("editor error not shown: %q", m.View(100, 20)[19])
+	}
+}
+
+func TestResolve(t *testing.T) {
+	m, be := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	keys(m, "v", "R") // the conversation
+	if m.mode != modeNormal || !strings.Contains(m.View(100, 20)[19], "cannot be resolved") {
+		t.Fatalf("R on the conversation: %q", m.View(100, 20)[19])
+	}
+	keys(m, "j", "R", "y") // a.go:3, unresolved
+	last := be.sent[len(be.sent)-1]
+	if last.Op != ipc.OpResolve || last.Thread != "T1" || !*last.On {
+		t.Errorf("resolve sent %+v", last)
+	}
+	keys(m, "G", "R") // b.go:7, resolved
+	if m.confirmMsg != "Unresolve b.go:7?" {
+		t.Errorf("confirm %q", m.confirmMsg)
+	}
+	keys(m, "y")
+	if last := be.sent[len(be.sent)-1]; last.Thread != "T2" || *last.On {
+		t.Errorf("unresolve sent %+v", last)
+	}
+	// In the checks list, R still re-runs failed CI.
+	keys(m, "v", "R")
+	if m.confirmMsg != "Re-run the failed CI of org/repo#123?" {
+		t.Errorf("R in the checks list: %q", m.confirmMsg)
+	}
+}
+
+func TestScrollComment(t *testing.T) {
+	m, _ := newModel()
+	s := withComments(snapshot())
+	var long []string
+	for i := 1; i <= 30; i++ {
+		long = append(long, fmt.Sprintf("line %d", i))
+	}
+	s.Items[0].Threads[1].Comments[0].Body = strings.Join(long, "\n") // r1, by me
+	m.SetSnapshot(s)
+	keys(m, "v", "j", "e", "j") // a.go:3 expanded, its first comment selected
+	view := func() []string { return listRows(m.View(100, 20)) }
+	body := view()
+	n := len(body)
+	if !strings.HasPrefix(body[n-1], "   │     ↓ ") || !strings.HasSuffix(strings.TrimRight(body[n-1], " "), "more lines · J") {
+		t.Fatalf("no more-lines marker:\n%s", strings.Join(body, "\n"))
+	}
+
+	// J scrolls the comment; the lines above give way to a marker.
+	keys(m, "J", "J", "J")
+	body = view()
+	if !strings.HasPrefix(body[0], "   │     ↑ 3 lines above · K") || !strings.HasPrefix(body[1], "   │     line 3") {
+		t.Errorf("after 3 J:\n%s", strings.Join(body, "\n"))
+	}
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r1" {
+		t.Errorf("J moved the selection to %+v", c)
+	}
+	// Scrolling stops at the end of the comment.
+	for i := 0; i < 50; i++ {
+		keys(m, "J")
+	}
+	body = view()
+	joined := strings.Join(body, "\n")
+	if !strings.Contains(joined, "line 30") || strings.Contains(joined, "more line") {
+		t.Errorf("at the end:\n%s", joined)
+	}
+	keys(m, "K")
+	// The marker covers a line too: two are hidden below.
+	if !strings.Contains(strings.Join(view(), "\n"), "2 more lines · J") {
+		t.Errorf("after K:\n%s", strings.Join(view(), "\n"))
+	}
+	// j jumps to the next comment, which starts unscrolled.
+	keys(m, "j")
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" || m.cscroll != 0 {
+		t.Errorf("j selected %+v, scroll %d", c, m.cscroll)
+	}
+	// J on a thread row, or in the checks list, does nothing.
+	keys(m, "g", "g", "J")
+	if m.cscroll != 0 {
+		t.Errorf("J on a thread scrolled to %d", m.cscroll)
+	}
+}
+
+func TestLegend(t *testing.T) {
+	m, _ := newModel()
+	keys(m, "?")
+	if screen := strings.Join(m.View(100, 30), "\n"); !strings.Contains(screen, "[Keybindings]") || strings.Contains(screen, "Marks") {
+		t.Fatalf("first page:\n%s", screen)
+	}
+	keys(m, kTab)
+	screen := strings.Join(m.View(100, 30), "\n")
+	if !strings.Contains(screen, "[Legend]") || m.mode != modeHelp {
+		t.Fatalf("tab did not show the legend:\n%s", screen)
+	}
+	// Every icon and mark, with its meaning, in full.
+	for _, sec := range m.legend() {
+		for _, e := range sec.keys {
+			if !strings.Contains(screen, e.key) || !strings.Contains(screen, e.desc) {
+				t.Errorf("legend lacks %q %q:\n%s", e.key, e.desc, screen)
+			}
+		}
+	}
+	keys(m, kTab)
+	if !strings.Contains(strings.Join(m.View(100, 30), "\n"), "Navigation") {
+		t.Error("tab did not go back to the keys")
+	}
+	keys(m, "x")
+	if m.mode != modeNormal {
+		t.Error("any other key should close the panel")
+	}
+	keys(m, "?")
+	if m.helpPage != 0 {
+		t.Error("? should open on the keys")
+	}
+}
+
+func TestCIRow(t *testing.T) {
+	m, _ := newModel()
+	ci := func(checks ...model.Check) string {
+		s := snapshot()
+		s.Items[0].Checks = checks
+		m.SetSnapshot(s)
+		row := headerRow(m.View(120, 20), "CI")
+		row, _, _ = strings.Cut(row, " · on a1b2c3d")
+		return row
+	}
+	req := func(c model.Check) model.Check { c.Required = true; return c }
+	for _, tc := range []struct {
+		checks []model.Check
+		want   string
+	}{
+		{[]model.Check{{Name: "a", State: model.Failed}, {Name: "b", State: model.Passed}}, " CI:       2/2 done · 1 failing"},
+		{[]model.Check{req(model.Check{Name: "a", State: model.Passed}), {Name: "b", State: model.Failed}}, " CI:       2/2 done · 1 failing, none required"},
+		{[]model.Check{req(model.Check{Name: "a", State: model.Failed}), {Name: "b", State: model.Failed}, {Name: "c", State: model.Pending}}, " CI:       2/3 done · 2 failing (1 required) · 1 running"},
+		{nil, " CI:       no checks reported yet"},
+	} {
+		if got := ci(tc.checks...); got != tc.want {
+			t.Errorf("CI row = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+func TestShortScreenKeepsFooter(t *testing.T) {
+	m, _ := newModel()
+	s := withComments(snapshot())
+	s.Items[0].Labels = []model.Label{{Name: "lgtm", Color: "0e8a16"}}
+	m.SetSnapshot(s)
+	rows := m.View(100, 11)
+	if !strings.Contains(rows[10], "connected") || headerRow(rows, "CI") == "" || headerRow(rows, "labels") != "" {
+		t.Errorf("short screen:\n%s", strings.Join(rows, "\n"))
+	}
+	if top := boxTop(rows); top < 0 || len(listRows(rows)) == 0 {
+		t.Errorf("no list on a short screen:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+func TestListTabs(t *testing.T) {
+	m, _ := newModel()
+	m.SetSnapshot(withComments(snapshot()))
+	tabs := func() string { rows := m.View(100, 24); return rows[boxTop(rows)-1] }
+	// Checks shown: its tab is bracketed (highlighted with colors), and
+	// each tab carries its own count.
+	if got := tabs(); got != "  Comments 2 new   [Checks 1 failing]   v switches" {
+		t.Errorf("checks tabs = %q", got)
+	}
+	keys(m, "v")
+	if got := tabs(); got != " [Comments 2 new]   Checks 1 failing    v switches" {
+		t.Errorf("comments tabs = %q", got)
+	}
+	// Nothing failing: the running jobs; nothing new: no count.
+	s := snapshot()
+	s.Items[0].Checks[1].State = model.Passed
+	m.SetSnapshot(s)
+	if got := tabs(); got != " [Comments]   Checks 2 running    v switches" {
+		t.Errorf("tabs = %q", got)
+	}
+	row := boxTop(m.View(100, 24)) - 1
+	m.Color = true
+	if got := m.View(100, 24)[row]; !strings.Contains(got, bgAccent+sBold+sOnAccent+" Comments") {
+		t.Errorf("active tab not highlighted: %q", got)
+	}
+}
+
+func TestThreadNames(t *testing.T) {
+	ts := []model.Thread{
+		{ID: model.ConversationID},
+		{ID: "a", Path: "docs/x/prd.md", Line: 3},
+		{ID: "b", Path: "docs/y/prd.md", Line: 7},
+		{ID: "c", Path: "pkg/main.go", Line: 1},
+		{ID: "d", Path: "pkg/main.go", Line: 9},
+		{ID: "e", Path: "README.md"},
+	}
+	got := threadNames(ts)
+	want := map[string]string{model.ConversationID: "conversation", "a": "x/prd.md:3", "b": "y/prd.md:7", "c": "main.go:1", "d": "main.go:9", "e": "README.md"}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s: %q, want %q", id, got[id], w)
+		}
+	}
+}
+
+func TestCheckRowTags(t *testing.T) {
+	m, _ := newModel()
+	s := snapshot()
+	s.Items[0].Checks[0].Source = "GitHub Advanced Security"
+	s.Items[0].WatchedChecks = []string{"e2e-metal-ipi"}
+	m.SetSnapshot(s)
+	body := listRows(m.View(100, 20))
+	// opt follows the name (after its bell); long sources are shortened.
+	if !strings.HasPrefix(body[3], " * e2e-metal-ipi "+bellIcon+" opt ") {
+		t.Errorf("optional job row = %q", body[3])
+	}
+	if !strings.Contains(strings.Join(body, "\n"), "GH Security") {
+		t.Errorf("source not shortened:\n%s", strings.Join(body, "\n"))
+	}
+	// Times are neutral: only the icon carries the state's color.
+	m.Color = true
+	for _, r := range m.View(100, 20) {
+		if strings.Contains(r, "running 23m") && strings.Contains(r, sYellow+padLeft("running 23m", timeW)) {
+			t.Errorf("running time in the state color: %q", r)
 		}
 	}
 }

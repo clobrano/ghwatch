@@ -34,6 +34,16 @@ type Retester interface {
 	Retest(ctx context.Context, gh *github.Client, it model.Item) (string, error)
 }
 
+// Discusser is implemented by kinds whose items have comment threads the
+// user can take part in.
+type Discusser interface {
+	// Reply posts body in a thread of it: model.ConversationID for the
+	// item's main conversation, else a review thread's ID.
+	Reply(ctx context.Context, gh *github.Client, it model.Item, thread, body string) error
+	// Resolve marks a review thread resolved, or unresolved.
+	Resolve(ctx context.Context, gh *github.Client, it model.Item, thread string, resolved bool) error
+}
+
 // Registry holds the kinds compiled into ghwatch.
 type Registry struct {
 	kinds []Kind

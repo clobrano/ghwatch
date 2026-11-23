@@ -369,3 +369,52 @@ func TestThreads(t *testing.T) {
 		t.Errorf("thread = %+v", th)
 	}
 }
+
+func TestReplyAndResolve(t *testing.T) {
+	var calls []string
+	fail := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		calls = append(calls, r.Method+" "+r.URL.Path+" "+string(body))
+		if r.URL.Path == "/graphql" {
+			if fail {
+				w.Write([]byte(`{"data":{"resolveReviewThread":null},"errors":[{"message":"Resource not accessible by integration"}]}`))
+				return
+			}
+			w.Write([]byte(`{"data":{"x":{}}}`))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	gh := github.New()
+	gh.API, gh.Endpoint = srv.URL, srv.URL+"/graphql"
+	gh.TokenFunc = func() (string, error) { return "t", nil }
+	ctx := context.Background()
+	it := model.Item{ID: "pr:o/r#5"}
+
+	if err := (Kind{}).Reply(ctx, gh, it, model.ConversationID, "LGTM"); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Kind{}).Reply(ctx, gh, it, "PRRT_1", "fixed\nin abc"); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Kind{}).Resolve(ctx, gh, it, "PRRT_1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Kind{}).Resolve(ctx, gh, it, "PRRT_1", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 4 || calls[0] != `POST /repos/o/r/issues/5/comments {"body":"LGTM"}` ||
+		!strings.Contains(calls[1], "addPullRequestReviewThreadReply") || !strings.Contains(calls[1], `"variables":{"body":"fixed\nin abc","thread":"PRRT_1"}`) ||
+		!strings.Contains(calls[2], "resolveReviewThread(input: {threadId: $thread})") || !strings.Contains(calls[3], "unresolveReviewThread") {
+		t.Errorf("calls =\n%s", strings.Join(calls, "\n"))
+	}
+	if err := (Kind{}).Resolve(ctx, gh, it, model.ConversationID, true); err == nil {
+		t.Error("resolving the conversation should fail")
+	}
+	fail = true
+	if err := (Kind{}).Resolve(ctx, gh, it, "PRRT_1", true); err == nil || !strings.Contains(err.Error(), "not accessible") {
+		t.Errorf("GraphQL error not reported: %v", err)
+	}
+}
