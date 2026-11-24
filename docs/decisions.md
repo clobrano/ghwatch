@@ -88,11 +88,8 @@ can be swapped out.
 - **Rate limit**: one GraphQL query per poll (up to 40 PRs per request).
   GitHub charges a query by the connections it reads, and each review
   thread's comments are one: comments make a poll cost about 56 requests
-  per PR instead of 3. With 20 PRs, that is about 11 points a poll.
-- **Poll interval**: 30 minutes by default. PRs rarely change by the
-  minute, and a check that just failed can wait; `p` polls at once when
-  it cannot. At 30 minutes, 20 PRs cost about 22 points an hour, under
-  0.5% of the budget of 5,000 (polling every minute cost some 13%).
+  per PR instead of 3. With 20 PRs every 60 s, that is about 11 points a
+  poll, some 13% of the hourly budget of 5,000.
 - **Comments**: what is new is decided locally, from when you last looked
   at the PR in ghwatch (`comments_read_at`). GitHub's own read state
   needs the notifications API and a token scope `gh` does not always

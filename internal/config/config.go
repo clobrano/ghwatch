@@ -114,7 +114,7 @@ func (c Config) Ignores(login string) bool {
 // Default returns the built-in configuration.
 func Default() Config {
 	return Config{
-		Interval:       30 * time.Minute, // PRs change slowly; p polls at once
+		Interval:       60 * time.Second,
 		StatusTemplate: DefaultStatusTemplate,
 		Notifier:       "desktop",
 		AutoStart:      true,
