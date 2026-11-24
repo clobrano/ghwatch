@@ -918,7 +918,7 @@ var helpSections = []helpSection{
 		{"h / l, gT / gt", "previous / next tab", ""},
 		{"1 – 9", "jump to tab N", ""},
 		{"j / k, gg / G", "move between jobs or threads", ""},
-		{"v", "switch between checks and comments", ""},
+		{"v", "switch comments / checks", ""},
 		{"/", "find a job or thread", ""},
 	}},
 	{"Comments", []helpEntry{
@@ -946,7 +946,7 @@ var helpSections = []helpSection{
 		{"R", "re-run failed CI (checks list)", ""},
 	}},
 	{"Other", []helpEntry{
-		{"tab", "legend: what icons and marks mean", ""},
+		{"tab", "legend of icons and marks", ""},
 		{"? / esc", "close this panel", ""},
 		{"q", "quit this TUI", ""},
 	}},

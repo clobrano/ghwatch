@@ -4,7 +4,7 @@ Watch the CI of your GitHub pull requests from the terminal: one tab per PR,
 every check with its state, and a desktop notification when a job fails.
 Works with GitHub Actions and with external CI such as Prow / OpenShift CI.
 
-![ghwatch demo: jobs finish, one fails, a PR goes through the merge queue and merges](docs/demo.gif)
+![ghwatch demo: a review comment arrives and its thread is read, a job fails, a PR goes through the merge queue and merges](docs/demo.gif)
 
 ## Quick start
 

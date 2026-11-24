@@ -104,7 +104,12 @@ vhs docs/demo/demo.tape
 ```
 
 This needs VHS 0.8 or later (with `ttyd` and `ffmpeg`), and the Nerd Font
-named in the tape (JetBrainsMono Nerd Font by default).
+named in the tape (JetBrainsMono Nerd Font by default). Without a Nerd
+Font, the codicon font from the `@vscode/codicons` npm package draws the
+same two glyphs (the bell and the comment mark, which Nerd Fonts keeps at
+the codicon code points): install `codicon.ttf` and name it after your
+monospace font, e.g. `Set FontFamily "JetBrains Mono, codicon"`. Chromium
+does not fall back to it on its own for these private-use characters.
 
 ## Code layout
 
