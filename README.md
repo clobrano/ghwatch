@@ -103,7 +103,10 @@ ghwatch icons                          # preview the icon sets
 
 ### Configuration
 
-Optional, in `~/.config/ghwatch/config.toml`:
+Optional, in `~/.config/ghwatch/config.toml`. ghwatch writes this file on
+its first run, with every setting commented out at its default, so you
+can see what is there and uncomment what you want to change; it never
+touches an existing file. For example:
 
 ```toml
 interval = "30m"            # how often to poll GitHub (minimum 10s); p polls at once

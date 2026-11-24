@@ -69,6 +69,12 @@ func main() {
 	flag.Parse()
 
 	paths := config.DefaultPaths()
+	// A first run leaves a commented config.toml to discover the settings.
+	if wrote, err := config.WriteDefault(paths.ConfigFile()); err != nil {
+		log.Printf("cannot write a default configuration: %v", err)
+	} else if wrote {
+		log.Printf("wrote a default configuration to %s", paths.ConfigFile())
+	}
 	cfg, err := config.Load(paths.ConfigFile())
 	if err != nil {
 		log.Fatal(err)

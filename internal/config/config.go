@@ -131,6 +131,84 @@ func Default() Config {
 	}
 }
 
+// defaultFile is the config.toml WriteDefault creates: every setting,
+// commented out with its default value and what it does. Comments keep
+// the defaults ghwatch's own, so a later default reaches existing users;
+// uncommenting a line changes it.
+var defaultFile = `# ghwatch configuration.
+#
+# Every setting is commented out, showing its default: ghwatch uses its
+# built-in value. Uncomment a line to change it. After editing, run
+# "ghwatch stop" so the background daemon starts again with it.
+
+# How often to poll GitHub (minimum 10s). p in the TUI polls at once.
+# interval = "30m"
+
+# Command that opens links. Default: $BROWSER, then xdg-open.
+# browser = "firefox"
+
+# Icon set: "fancy", or "safe" if some icons show as boxes
+# (run "ghwatch icons" to compare them).
+# icons = "fancy"
+
+# Colors: a Catppuccin flavor, latte, frappe, macchiato or mocha.
+# Pick the one closest to your terminal's background.
+# theme = "frappe"
+
+# Summary printed by "ghwatch status", e.g. for the tmux status line:
+# a Go text/template (see the README for its fields).
+# status_template = '` + DefaultStatusTemplate + `'
+
+[notify]
+# Where notifications go: desktop (notify-send), exec, or none.
+# backend = "desktop"
+# How long a desktop notification stays on screen ("0": until dismissed).
+# timeout = "30s"
+# For backend = "exec": a command reading each notification as JSON.
+# command = "curl -s -d @- ntfy.sh/my-topic"
+
+[comments]
+# GitHub logins whose comments are never new and never notify (bots,
+# say). Your own comments never count.
+# ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
+
+[autoadd]
+# Watch, on their own, the open PRs requesting your review...
+# review_requested = false
+# ...and those assigned to you.
+# assigned = false
+# At most this many auto-added PRs at once.
+# max = 20
+
+[daemon]
+# Start the background daemon when a TUI needs it.
+# autostart = true
+`
+
+// WriteDefault writes the commented default configuration to path when
+// no file is there; an existing file is never touched. It reports
+// whether it wrote one.
+func WriteDefault(path string) (bool, error) {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if os.IsExist(err) {
+		return false, nil // written meanwhile by another ghwatch
+	}
+	if err != nil {
+		return false, err
+	}
+	if _, err := f.WriteString(defaultFile); err != nil {
+		f.Close()
+		return false, err
+	}
+	return true, f.Close()
+}
+
 // Load reads config.toml; a missing file yields the defaults.
 func Load(path string) (Config, error) {
 	cfg := Default()
