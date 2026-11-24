@@ -100,9 +100,28 @@ type Config struct {
 	AutoAddAssigned bool
 	// AutoAddMax caps how many auto-added PRs are watched at once.
 	AutoAddMax int
+	// AutoAddRepos are glob patterns (filepath.Match, lower case) of the
+	// owner/repo names auto-add looks at; empty means every repository.
+	AutoAddRepos []string
 	// IgnoreAuthors are GitHub logins, lower case, whose comments are
 	// never new and never notify.
 	IgnoreAuthors []string
+}
+
+// AutoAddsRepo reports whether auto-add looks at the repository
+// owner/name: any, when AutoAddRepos is empty, else those matching one
+// of its patterns ("my-org/*" matches every repository of my-org).
+func (c Config) AutoAddsRepo(repo string) bool {
+	if len(c.AutoAddRepos) == 0 {
+		return true
+	}
+	repo = strings.ToLower(repo)
+	for _, p := range c.AutoAddRepos {
+		if ok, _ := filepath.Match(p, repo); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Ignores reports whether comments by login are ignored. A "[bot]"
@@ -179,6 +198,10 @@ var defaultFile = `# ghwatch configuration.
 # assigned = false
 # At most this many auto-added PRs at once.
 # max = 20
+# Only in these repositories (owner/repo, * ? [ ] wildcards); all when
+# empty. A PR from a repository dropped from the list is removed, unless
+# you reviewed it.
+# repos = ["my-org/*", "other-org/some-repo"]
 
 [daemon]
 # Start the background daemon when a TUI needs it.
@@ -291,6 +314,20 @@ func Load(path string) (Config, error) {
 				cfg.AutoAddAssigned = b
 			} else {
 				cfg.AutoAddReviews = b
+			}
+		case "autoadd.repos":
+			list, ok := v.([]string)
+			if !ok {
+				err = fmt.Errorf("want a list of owner/repo patterns, e.g. [\"my-org/*\"]")
+			}
+			cfg.AutoAddRepos = nil
+			for _, p := range list {
+				p = strings.ToLower(strings.TrimSpace(p))
+				if _, perr := filepath.Match(p, ""); perr != nil || !strings.Contains(p, "/") {
+					err = fmt.Errorf("bad pattern %q: want owner/repo, with * ? [ ] wildcards", p)
+					break
+				}
+				cfg.AutoAddRepos = append(cfg.AutoAddRepos, p)
 			}
 		case "autoadd.max":
 			n, ok := v.(int64)

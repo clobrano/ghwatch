@@ -925,3 +925,28 @@ func TestPruneKeepsUnsearchedReasons(t *testing.T) {
 		t.Errorf("items = %+v", d.snap.Items)
 	}
 }
+
+func TestAutoAddRepos(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	os.WriteFile(paths.Watchlist(), []byte(""), 0o600)
+	fake := &fakePR{items: map[string]model.Item{}, found: map[string][]string{
+		"pr:mine/a#1":   {model.AddedReview},
+		"pr:other/b#2":  {model.AddedReview},
+		"pr:mine-x/c#3": {model.AddedAssigned},
+	}}
+	for _, id := range []string{"pr:mine/a#1", "pr:other/b#2", "pr:mine-x/c#3"} {
+		it := (pr.Kind{}).Stub(id)
+		it.HeadSHA = "a"
+		fake.set(it)
+	}
+	cfg := config.Config{Interval: time.Hour, AutoAddReviews: true, AutoAddAssigned: true, AutoAddMax: 10, AutoAddRepos: []string{"mine/*"}}
+	_, cancel, done := startDaemonWith(t, paths, cfg, fake, &recorder{})
+	defer func() { cancel(); <-done }()
+	c := dial(t, paths)
+	s := waitFor(t, c, "added", func(s *model.Snapshot) bool { return len(s.Items) > 0 && s.Items[0].HeadSHA != "" })
+	time.Sleep(settle)
+	if len(s.Items) != 1 || s.Items[0].ID != "pr:mine/a#1" {
+		t.Errorf("items = %+v", s.Items)
+	}
+}

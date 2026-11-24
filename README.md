@@ -127,6 +127,7 @@ ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
 review_requested = true     # watch PRs requesting your review
 assigned = true             # watch PRs assigned to you
 max = 20                    # at most this many auto-added PRs at once
+repos = ["my-org/*"]        # only these repositories (globs); all when empty
 ```
 
 - **Theme:** the colors are a [Catppuccin](https://catppuccin.com)
@@ -147,7 +148,10 @@ max = 20                    # at most this many auto-added PRs at once
   can edit the file by hand.
 - **Auto-add:** with `review_requested` and/or `assigned` on, ghwatch
   adds the open PRs requesting your review (from you, not your teams) or
-  assigned to you, at each poll. They are marked `# auto: …` in the
+  assigned to you, at each poll. `repos` limits it to repositories
+  matching its patterns (`owner/repo`, with `*`, `?` and `[...]`:
+  `"my-org/*"` is every repository of my-org); without it, every
+  repository counts. They are marked `# auto: …` in the
   watchlist and get an `added:` row in the TUI. See
   [keeping the tab list short](#keeping-the-tab-list-short).
 
@@ -165,6 +169,9 @@ reviewed it. To stop seeing auto-added PRs yourself:
   line in the watchlist). An auto-added PR removed this way is dismissed:
   it is not added again, even while your review is still requested. To
   follow it again, add it back with `a` or `ghwatch add`.
+- **Fewer repositories:** list the ones you want in `repos`. Auto-added
+  PRs from a repository no longer listed are removed, unless you reviewed
+  them.
 - **Fewer at once:** lower `max` under `[autoadd]` (20 by default). Once
   that many auto-added PRs are watched, no more are added until you
   remove some.

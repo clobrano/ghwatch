@@ -835,7 +835,9 @@ func (d *Daemon) discover(ctx context.Context) (found map[string][]string, searc
 			return nil, nil // without results, nothing is removed either
 		}
 		for id, r := range got {
-			found[id] = r
+			if d.Config.AutoAddsRepo(k.Stub(id).Repo) {
+				found[id] = r
+			}
 		}
 	}
 	ids := make([]string, 0, len(found))

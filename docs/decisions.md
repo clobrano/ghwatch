@@ -107,7 +107,11 @@ can be swapped out.
   decided after the poll's fetch, so a review just submitted is seen. A
   PR removed this way is not dismissed: it comes back if it calls for you
   again. Reasons whose toggle is off are left alone, so turning a toggle
-  off removes nothing. `max` (20) caps how many are watched at once.
+  off removes nothing. `max` (20) caps how many are watched at once, and
+  `repos` (glob patterns on owner/repo, case ignored) limits the
+  repositories; the search itself is not narrowed, the results are, so a
+  repository dropped from the list sheds its auto-added PRs like any PR
+  that stopped calling for you.
 
 - **Comments**: what is new is decided locally, from when you last looked
   at the PR in ghwatch (`comments_read_at`). GitHub's own read state

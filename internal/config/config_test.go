@@ -170,7 +170,7 @@ func TestWriteDefault(t *testing.T) {
 	// (but for the examples, which are not defaults).
 	data, _ := os.ReadFile(path)
 	lines := strings.Split(string(data), "\n")
-	examples := map[string]bool{"browser": true, "command": true, "ignore_authors": true}
+	examples := map[string]bool{"browser": true, "command": true, "ignore_authors": true, "repos": true}
 	settings := 0
 	for i, l := range lines {
 		key, _, ok := strings.Cut(strings.TrimPrefix(l, "# "), " = ")
@@ -190,8 +190,8 @@ func TestWriteDefault(t *testing.T) {
 			t.Errorf("%s: the file's value is not the default: %+v", key, cfg)
 		}
 	}
-	if settings != 13 {
-		t.Errorf("%d settings in the default file, want 13", settings)
+	if settings != 14 {
+		t.Errorf("%d settings in the default file, want 14", settings)
 	}
 	// An existing file is never touched.
 	os.WriteFile(path, []byte("interval = 90\n"), 0o600)
@@ -200,5 +200,32 @@ func TestWriteDefault(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(path); string(data) != "interval = 90\n" {
 		t.Errorf("existing file changed: %q", data)
+	}
+}
+
+func TestAutoAddRepos(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if cfg, _ := Load(path); !cfg.AutoAddsRepo("any/repo") {
+		t.Error("an empty list should allow every repository")
+	}
+	os.WriteFile(path, []byte("[autoadd]\nrepos = [\"OSAC-project/*\", \"medik8s/node-*\"]\n"), 0o600)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for repo, want := range map[string]bool{
+		"osac-project/osac": true, "Osac-Project/enhancement-proposals": true,
+		"medik8s/node-healthcheck-operator": true, "medik8s/sbd": false,
+		"osac-project-fork/osac": false, "other/osac-project": false,
+	} {
+		if cfg.AutoAddsRepo(repo) != want {
+			t.Errorf("AutoAddsRepo(%q) = %v", repo, !want)
+		}
+	}
+	for _, bad := range []string{"[autoadd]\nrepos = [\"osac-project\"]\n", "[autoadd]\nrepos = [\"o/[x\"]\n", "[autoadd]\nrepos = \"o/*\"\n"} {
+		os.WriteFile(path, []byte(bad), 0o600)
+		if _, err := Load(path); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
 	}
 }
