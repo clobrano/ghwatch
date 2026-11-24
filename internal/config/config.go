@@ -94,6 +94,12 @@ type Config struct {
 	// Theme is the TUI's Catppuccin flavor: latte, frappe (the default),
 	// macchiato or mocha.
 	Theme string
+	// AutoAddReviews adds the open PRs requesting the user's review to
+	// the watchlist; AutoAddAssigned, those assigned to the user.
+	AutoAddReviews  bool
+	AutoAddAssigned bool
+	// AutoAddMax caps how many auto-added PRs are watched at once.
+	AutoAddMax int
 	// IgnoreAuthors are GitHub logins, lower case, whose comments are
 	// never new and never notify.
 	IgnoreAuthors []string
@@ -120,6 +126,7 @@ func Default() Config {
 		AutoStart:      true,
 		Icons:          "fancy",
 		Theme:          "frappe",
+		AutoAddMax:     20,
 		NotifyTimeout:  30 * time.Second,
 	}
 }
@@ -197,6 +204,22 @@ func Load(path string) (Config, error) {
 					err = fmt.Errorf("want a Catppuccin flavor: latte, frappe, macchiato or mocha")
 				}
 			}
+		case "autoadd.review_requested", "autoadd.assigned":
+			b, ok := v.(bool)
+			if !ok {
+				err = fmt.Errorf("want true or false")
+			}
+			if k == "autoadd.assigned" {
+				cfg.AutoAddAssigned = b
+			} else {
+				cfg.AutoAddReviews = b
+			}
+		case "autoadd.max":
+			n, ok := v.(int64)
+			if !ok || n < 1 {
+				err = fmt.Errorf("want a number of PRs, at least 1")
+			}
+			cfg.AutoAddMax = int(n)
 		case "autostart", "daemon.autostart":
 			b, ok := v.(bool)
 			if !ok {

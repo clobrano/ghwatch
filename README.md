@@ -119,6 +119,11 @@ timeout = "30s"             # how long notifications stay on screen
 
 [comments]
 ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
+
+[autoadd]
+review_requested = true     # watch PRs requesting your review
+assigned = true             # watch PRs assigned to you
+max = 20                    # at most this many auto-added PRs at once
 ```
 
 - **Theme:** the colors are a [Catppuccin](https://catppuccin.com)
@@ -137,6 +142,11 @@ ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
   to `command`, to send it anywhere, e.g. ntfy.sh or a chat webhook.
 - **The watched PRs** are in `~/.config/ghwatch/watch`, one per line. You
   can edit the file by hand.
+- **Auto-add:** with `review_requested` and/or `assigned` on, ghwatch
+  adds the open PRs requesting your review (from you, not your teams) or
+  assigned to you, at each poll. They are marked `# auto: …` in the
+  watchlist and get an `added:` row in the TUI. Remove one (`d`) and it
+  is not added again; it stays after you review it or are unassigned.
 
 ### Requirements
 

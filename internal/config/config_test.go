@@ -131,3 +131,24 @@ func TestTheme(t *testing.T) {
 		t.Error("unknown theme accepted")
 	}
 }
+
+func TestAutoAdd(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if cfg, _ := Load(path); cfg.AutoAddReviews || cfg.AutoAddAssigned || cfg.AutoAddMax != 20 {
+		t.Errorf("defaults: %+v", cfg)
+	}
+	os.WriteFile(path, []byte("[autoadd]\nreview_requested = true\nmax = 5\n"), 0o600)
+	if cfg, err := Load(path); err != nil || !cfg.AutoAddReviews || cfg.AutoAddAssigned || cfg.AutoAddMax != 5 {
+		t.Errorf("reviews only: %+v, %v", cfg, err)
+	}
+	os.WriteFile(path, []byte("[autoadd]\nassigned = true\n"), 0o600)
+	if cfg, err := Load(path); err != nil || cfg.AutoAddReviews || !cfg.AutoAddAssigned {
+		t.Errorf("assigned only: %+v, %v", cfg, err)
+	}
+	for _, bad := range []string{"[autoadd]\nassigned = 1\n", "[autoadd]\nmax = 0\n", "[autoadd]\nmax = \"5\"\n"} {
+		os.WriteFile(path, []byte(bad), 0o600)
+		if _, err := Load(path); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

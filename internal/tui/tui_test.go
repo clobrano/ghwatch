@@ -1396,3 +1396,17 @@ func TestCheckRowTags(t *testing.T) {
 		}
 	}
 }
+
+func TestAddedRow(t *testing.T) {
+	m, _ := newModel()
+	s := snapshot()
+	s.Items[0].Added = []string{model.AddedReview, model.AddedAssigned}
+	m.SetSnapshot(s)
+	if got := headerRow(m.View(100, 24), "added"); got != " added:    your review is requested · assigned to you" {
+		t.Errorf("added row = %q", got)
+	}
+	keys(m, "2") // added by hand: no row
+	if got := headerRow(m.View(100, 24), "added"); got != "" {
+		t.Errorf("added row for a PR added by hand = %q", got)
+	}
+}

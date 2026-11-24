@@ -19,6 +19,7 @@ changing the meaning of a field bumps `schema`.
       "ci_restarted": true, "item_finished": true, "comment": true
     }
   },
+  "dismissed": ["pr:org/repo#7"], // auto-added items you removed: not added again (omitted when none)
   "items": [{                  // watchlist order
     "kind": "pr",
     "id": "pr:org/repo#123",   // kind-namespaced, lower case
@@ -44,6 +45,7 @@ changing the meaning of a field bumps `schema`.
     "labels": [{"name": "lgtm", "color": "0e8a16"}], // GitHub labels (omitted when none)
     "watched_checks": ["e2e"], // jobs with their own notifications (omitted when none)
     "watched_threads": ["conversation"], // comment threads with their own notifications, by id (omitted when none)
+    "added": ["review requested", "assigned"], // why ghwatch added the item on its own (omitted when added by hand)
     "muted": true,             // alerts, watched_checks and watched_threads silenced, kept to restore (omitted when false)
     "comments_read_at": "…",   // comments newer than this are new; set at the first fetch (omitted before)
     "threads": [{              // the conversation, then review threads in GitHub's order

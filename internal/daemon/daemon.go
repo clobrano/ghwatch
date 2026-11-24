@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -215,8 +216,10 @@ func backoff(interval time.Duration, failures int) time.Duration {
 	return min(d, 15*time.Minute)
 }
 
-// Poll fetches every watched item once and applies the result.
+// Poll fetches every watched item once and applies the result. When
+// auto-add is on, it first adds the PRs that call for the user.
 func (d *Daemon) Poll(ctx context.Context) (*github.RateLimit, error) {
+	d.discover(ctx)
 	d.mu.Lock()
 	byKind := map[string][]string{}
 	var order []string
@@ -305,6 +308,7 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 	cur.Alerts = prev.Alerts
 	cur.WatchedChecks = prev.WatchedChecks
 	cur.WatchedThreads = prev.WatchedThreads
+	cur.Added = prev.Added
 	cur.Muted = prev.Muted
 	cur.CommentsReadAt = prev.CommentsReadAt
 	if cur.CommentsReadAt.IsZero() {
@@ -383,6 +387,7 @@ func (d *Daemon) Snapshot() *model.Snapshot {
 func (d *Daemon) copyLocked() *model.Snapshot {
 	s := d.snap
 	s.Items = append([]model.Item(nil), d.snap.Items...)
+	s.Dismissed = slices.Clone(d.snap.Dismissed)
 	s.Settings.Events = map[model.EventType]bool{}
 	for k, v := range d.snap.Settings.Events {
 		s.Settings.Events[k] = v
@@ -456,6 +461,7 @@ func (d *Daemon) loadState() {
 		return
 	}
 	d.snap.Items = s.Items
+	d.snap.Dismissed = s.Dismissed
 	d.snap.PolledAt = s.PolledAt
 	d.snap.Settings.Mute = s.Settings.Mute
 	for k, v := range s.Settings.Events {
@@ -496,6 +502,17 @@ func (d *Daemon) setIDsLocked(ids []string) {
 	old := map[string]model.Item{}
 	for _, it := range d.snap.Items {
 		old[it.ID] = it
+	}
+	// An auto-added item the user removed (with d or by editing the file)
+	// is not added again.
+	keep := map[string]bool{}
+	for _, id := range ids {
+		keep[id] = true
+	}
+	for _, it := range d.snap.Items {
+		if len(it.Added) > 0 && !keep[it.ID] && !slices.Contains(d.snap.Dismissed, it.ID) {
+			d.snap.Dismissed = append(d.snap.Dismissed, it.ID)
+		}
 	}
 	items := make([]model.Item, 0, len(ids))
 	for _, id := range ids {
@@ -718,6 +735,8 @@ func (d *Daemon) add(ctx context.Context, input string) (string, error) {
 	if !changed {
 		return "already watching " + id, nil
 	}
+	// Added by hand: auto-add may add it again after a later removal.
+	d.snap.Dismissed = slices.DeleteFunc(d.snap.Dismissed, func(x string) bool { return x == id })
 	if err := d.syncWatchlistLocked(); err != nil {
 		return "", err
 	}
@@ -781,6 +800,85 @@ func (d *Daemon) retest(ctx context.Context, id string) (string, error) {
 		d.RequestPoll()
 	}
 	return info, err
+}
+
+// discover adds the PRs that call for the user, per the auto-add
+// settings: those requesting their review and those assigned to them.
+// New ones are marked unseen; dismissed ones stay out; at most
+// AutoAddMax auto-added items are watched.
+func (d *Daemon) discover(ctx context.Context) {
+	var reasons []string
+	if d.Config.AutoAddReviews {
+		reasons = append(reasons, model.AddedReview)
+	}
+	if d.Config.AutoAddAssigned {
+		reasons = append(reasons, model.AddedAssigned)
+	}
+	if len(reasons) == 0 || d.Kinds == nil {
+		return
+	}
+	found := map[string][]string{}
+	for _, k := range d.Kinds.All() {
+		disc, ok := k.(kind.Discoverer)
+		if !ok {
+			continue
+		}
+		d.fetches.Add(1)
+		got, err := disc.Discover(ctx, d.GH, reasons)
+		if err != nil {
+			d.Log.Printf("auto-add: %v", err)
+			return
+		}
+		for id, r := range got {
+			found[id] = r
+		}
+	}
+	ids := make([]string, 0, len(found))
+	for id := range found {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	auto := 0
+	watched := map[string]bool{}
+	for _, it := range d.snap.Items {
+		watched[it.ID] = true
+		if len(it.Added) > 0 {
+			auto++
+		}
+	}
+	var added []string
+	for _, id := range ids {
+		if watched[id] || slices.Contains(d.snap.Dismissed, id) {
+			continue
+		}
+		if auto >= d.Config.AutoAddMax {
+			d.Log.Printf("auto-add: %d PRs already added automatically (max %d); not adding %s", auto, d.Config.AutoAddMax, id)
+			break
+		}
+		if _, err := watchlist.AddNoted(d.Paths.Watchlist(), id, "auto: "+strings.Join(found[id], ", "), d.parse); err != nil {
+			d.Log.Printf("auto-add %s: %v", id, err)
+			continue
+		}
+		added = append(added, id)
+		auto++
+	}
+	if len(added) == 0 {
+		return
+	}
+	if err := d.syncWatchlistLocked(); err != nil {
+		d.Log.Printf("auto-add: %v", err)
+		return
+	}
+	for i := range d.snap.Items {
+		if it := &d.snap.Items[i]; slices.Contains(added, it.ID) {
+			it.Added, it.Unseen = found[it.ID], true
+		}
+	}
+	d.Log.Printf("auto-add: added %s", strings.Join(added, ", "))
+	d.publishLocked()
 }
 
 // discuss replies in a comment thread, or resolves one, then polls so

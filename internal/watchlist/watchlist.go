@@ -67,7 +67,11 @@ func entry(line string) string {
 
 // Add appends id to the file unless it is already listed. It reports
 // whether the file changed.
-func Add(path, id string, parse Parser) (bool, error) {
+func Add(path, id string, parse Parser) (bool, error) { return AddNoted(path, id, "", parse) }
+
+// AddNoted is Add with a note after the entry, as a comment, e.g.
+// "auto: review requested".
+func AddNoted(path, id, note string, parse Parser) (bool, error) {
 	ids, _, err := Load(path, parse)
 	if err != nil {
 		return false, err
@@ -87,7 +91,11 @@ func Add(path, id string, parse Parser) (bool, error) {
 	if len(data) > 0 && data[len(data)-1] != '\n' {
 		data = append(data, '\n')
 	}
-	data = append(data, id+"\n"...)
+	line := id
+	if note != "" {
+		line += "  # " + note
+	}
+	data = append(data, line+"\n"...)
 	return true, writeAtomic(path, data)
 }
 

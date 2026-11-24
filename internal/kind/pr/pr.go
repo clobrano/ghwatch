@@ -495,3 +495,59 @@ func mutate(ctx context.Context, gh *github.Client, query string, vars map[strin
 	}
 	return nil
 }
+
+// searchQueries are the GitHub searches behind each reason: review
+// requested from the user (not a team), and assigned to the user.
+var searchQueries = map[string]string{
+	model.AddedReview:   "is:pr is:open archived:false user-review-requested:@me",
+	model.AddedAssigned: "is:pr is:open archived:false assignee:@me",
+}
+
+// discoverLimit is how many PRs one search returns; the daemon caps how
+// many it watches.
+const discoverLimit = 50
+
+// Discover implements kind.Discoverer with one GraphQL request holding a
+// search per reason.
+func (Kind) Discover(ctx context.Context, gh *github.Client, reasons []string) (map[string][]string, error) {
+	var b strings.Builder
+	b.WriteString("query {\n")
+	for i, r := range reasons {
+		q, ok := searchQueries[r]
+		if !ok {
+			return nil, fmt.Errorf("unknown reason %q", r)
+		}
+		fmt.Fprintf(&b, "  s%d: search(query: %s, type: ISSUE, first: %d) { nodes { ... on PullRequest { number repository { nameWithOwner } } } }\n",
+			i, strconv.Quote(q), discoverLimit)
+	}
+	b.WriteString("}\n")
+	resp, err := gh.GraphQL(ctx, b.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Errors) > 0 {
+		return nil, &github.Error{Message: resp.Errors[0].Message}
+	}
+	var data map[string]struct {
+		Nodes []struct {
+			Number     int `json:"number"`
+			Repository struct {
+				NameWithOwner string `json:"nameWithOwner"`
+			} `json:"repository"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return nil, fmt.Errorf("decode search: %w", err)
+	}
+	out := map[string][]string{}
+	for i, r := range reasons {
+		for _, n := range data[fmt.Sprintf("s%d", i)].Nodes {
+			if n.Number == 0 || n.Repository.NameWithOwner == "" {
+				continue // not a pull request
+			}
+			id := ID(n.Repository.NameWithOwner, n.Number)
+			out[id] = append(out[id], r)
+		}
+	}
+	return out, nil
+}

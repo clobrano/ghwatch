@@ -393,6 +393,21 @@ func (m *Model) header(w int) []line {
 	if a := alertSegs(it); len(a) > 0 {
 		row("alerts", a...)
 	}
+	if len(it.Added) > 0 {
+		// Why ghwatch added the PR on its own.
+		var why []seg
+		for _, r := range it.Added {
+			switch r {
+			case model.AddedReview:
+				why = append(why, seg{"your review is requested", sAccent})
+			case model.AddedAssigned:
+				why = append(why, seg{"assigned to you", sAccent})
+			default:
+				why = append(why, seg{r, sAccent})
+			}
+		}
+		row("added", why...)
+	}
 	if len(it.Labels) > 0 {
 		out = append(out, labelLine(it.Labels))
 	}
