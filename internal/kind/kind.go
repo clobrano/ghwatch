@@ -44,6 +44,16 @@ type Discusser interface {
 	Resolve(ctx context.Context, gh *github.Client, it model.Item, thread string, resolved bool) error
 }
 
+// Discoverer is implemented by kinds that can find items to watch on
+// their own: those for which the user's review is requested
+// (model.AddedReview) or that are assigned to the user
+// (model.AddedAssigned).
+type Discoverer interface {
+	// Discover returns the IDs of the open items matching any of reasons,
+	// each with the reasons it matches.
+	Discover(ctx context.Context, gh *github.Client, reasons []string) (map[string][]string, error)
+}
+
 // Registry holds the kinds compiled into ghwatch.
 type Registry struct {
 	kinds []Kind
@@ -52,6 +62,9 @@ type Registry struct {
 // NewRegistry returns a registry of the given kinds; the first kind
 // whose Parse accepts an input wins.
 func NewRegistry(kinds ...Kind) *Registry { return &Registry{kinds: kinds} }
+
+// All returns the registered kinds.
+func (r *Registry) All() []Kind { return r.kinds }
 
 // Get returns the kind with the given name.
 func (r *Registry) Get(name string) Kind {

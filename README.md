@@ -103,10 +103,13 @@ ghwatch icons                          # preview the icon sets
 
 ### Configuration
 
-Optional, in `~/.config/ghwatch/config.toml`:
+Optional, in `~/.config/ghwatch/config.toml`. ghwatch writes this file on
+its first run, with every setting commented out at its default, so you
+can see what is there and uncomment what you want to change; it never
+touches an existing file. For example:
 
 ```toml
-interval = "60s"            # how often to poll GitHub (minimum 10s)
+interval = "30m"            # how often to poll GitHub (minimum 10s); p polls at once
 browser = "firefox"         # default: $BROWSER, then xdg-open
 icons = "fancy"             # or "safe" if some icons show as boxes
 theme = "frappe"            # Catppuccin flavor: latte, frappe, macchiato or mocha
@@ -119,6 +122,12 @@ timeout = "30s"             # how long notifications stay on screen
 
 [comments]
 ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
+
+[autoadd]
+review_requested = true     # watch PRs requesting your review
+assigned = true             # watch PRs assigned to you
+max = 20                    # at most this many auto-added PRs at once
+repos = ["my-org/*"]        # only these repositories (globs); all when empty
 ```
 
 - **Theme:** the colors are a [Catppuccin](https://catppuccin.com)
@@ -137,6 +146,44 @@ ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
   to `command`, to send it anywhere, e.g. ntfy.sh or a chat webhook.
 - **The watched PRs** are in `~/.config/ghwatch/watch`, one per line. You
   can edit the file by hand.
+- **Auto-add:** with `review_requested` and/or `assigned` on, ghwatch
+  adds the open PRs requesting your review (from you, not your teams) or
+  assigned to you, at each poll. `repos` limits it to repositories
+  matching its patterns (`owner/repo`, with `*`, `?` and `[...]`:
+  `"my-org/*"` is every repository of my-org); without it, every
+  repository counts. They are marked `# auto: …` in the
+  watchlist and get an `added:` row in the TUI. See
+  [keeping the tab list short](#keeping-the-tab-list-short).
+
+### Keeping the tab list short
+
+ghwatch removes an auto-added PR on its own when it no longer calls for
+you: you were removed from its reviewers (or removed yourself) without
+reviewing it, or you were unassigned. A message says so, and the PR comes
+back if it calls for you again. It stays when you reviewed it, since
+that is when the author's answer matters, and after it is merged or
+closed. ghwatch looks at the PR's latest 20 reviews to tell whether you
+reviewed it. To stop seeing auto-added PRs yourself:
+
+- **One PR:** press `d` on its tab (or `ghwatch rm <PR>`, or delete its
+  line in the watchlist). An auto-added PR removed this way is dismissed:
+  it is not added again, even while your review is still requested. To
+  follow it again, add it back with `a` or `ghwatch add`.
+- **Fewer repositories:** list the ones you want in `repos`. Auto-added
+  PRs from a repository no longer listed are removed, unless you reviewed
+  them.
+- **Fewer at once:** lower `max` under `[autoadd]` (20 by default). Once
+  that many auto-added PRs are watched, no more are added until you
+  remove some.
+- **None at all:** set `review_requested` and `assigned` back to `false`
+  (or delete them), then run `ghwatch stop`. No more PRs are added, but
+  the ones already added stay: remove them with `d`, or delete their
+  `# auto:` lines in the watchlist.
+- **Keep it, without the noise:** `m` mutes a PR's notifications.
+
+Dismissals live in ghwatch's state file
+(`~/.local/state/ghwatch/snapshot.json`): if that file is deleted, the
+PRs you dismissed can be added again.
 
 ### Requirements
 

@@ -60,7 +60,7 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("ghwatch: ")
 	serve := flag.Bool("serve", false, "run the daemon in the foreground")
-	interval := flag.Duration("interval", 0, "poll interval for -serve (default from config, 60s)")
+	interval := flag.Duration("interval", 0, "poll interval for -serve (default from config, 30m)")
 	idleExit := flag.Duration("idle-exit", 0, "with -serve: exit after this long without clients (0: never)")
 	flag.Usage = func() {
 		fmt.Fprint(flag.CommandLine.Output(), usage)
@@ -69,6 +69,12 @@ func main() {
 	flag.Parse()
 
 	paths := config.DefaultPaths()
+	// A first run leaves a commented config.toml to discover the settings.
+	if wrote, err := config.WriteDefault(paths.ConfigFile()); err != nil {
+		log.Printf("cannot write a default configuration: %v", err)
+	} else if wrote {
+		log.Printf("wrote a default configuration to %s", paths.ConfigFile())
+	}
 	cfg, err := config.Load(paths.ConfigFile())
 	if err != nil {
 		log.Fatal(err)

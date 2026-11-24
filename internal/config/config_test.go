@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	if cfg, err := Load(path); err != nil || cfg.Interval != time.Minute || cfg.Notifier != "desktop" {
+	if cfg, err := Load(path); err != nil || cfg.Interval != 30*time.Minute || cfg.Notifier != "desktop" {
 		t.Fatalf("defaults = %+v, %v", cfg, err)
 	}
 	os.WriteFile(path, []byte(`
@@ -129,5 +130,102 @@ func TestTheme(t *testing.T) {
 	os.WriteFile(path, []byte("theme = \"jira\"\n"), 0o600)
 	if _, err := Load(path); err == nil {
 		t.Error("unknown theme accepted")
+	}
+}
+
+func TestAutoAdd(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if cfg, _ := Load(path); cfg.AutoAddReviews || cfg.AutoAddAssigned || cfg.AutoAddMax != 20 {
+		t.Errorf("defaults: %+v", cfg)
+	}
+	os.WriteFile(path, []byte("[autoadd]\nreview_requested = true\nmax = 5\n"), 0o600)
+	if cfg, err := Load(path); err != nil || !cfg.AutoAddReviews || cfg.AutoAddAssigned || cfg.AutoAddMax != 5 {
+		t.Errorf("reviews only: %+v, %v", cfg, err)
+	}
+	os.WriteFile(path, []byte("[autoadd]\nassigned = true\n"), 0o600)
+	if cfg, err := Load(path); err != nil || cfg.AutoAddReviews || !cfg.AutoAddAssigned {
+		t.Errorf("assigned only: %+v, %v", cfg, err)
+	}
+	for _, bad := range []string{"[autoadd]\nassigned = 1\n", "[autoadd]\nmax = 0\n", "[autoadd]\nmax = \"5\"\n"} {
+		os.WriteFile(path, []byte(bad), 0o600)
+		if _, err := Load(path); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestWriteDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ghwatch", "config.toml")
+	if wrote, err := WriteDefault(path); err != nil || !wrote {
+		t.Fatalf("WriteDefault = %v, %v", wrote, err)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v", fi.Mode().Perm())
+	}
+	// All commented out: it loads as the defaults.
+	if cfg, err := Load(path); err != nil || !reflect.DeepEqual(cfg, Default()) {
+		t.Fatalf("Load = %+v, %v", cfg, err)
+	}
+	// Each setting, uncommented alone, parses and shows the real default
+	// (but for the examples, which are not defaults).
+	data, _ := os.ReadFile(path)
+	lines := strings.Split(string(data), "\n")
+	examples := map[string]bool{"browser": true, "command": true, "ignore_authors": true, "repos": true}
+	settings := 0
+	for i, l := range lines {
+		key, _, ok := strings.Cut(strings.TrimPrefix(l, "# "), " = ")
+		if !strings.HasPrefix(l, "# ") || !ok || strings.Contains(key, " ") {
+			continue
+		}
+		settings++
+		edited := append([]string(nil), lines...)
+		edited[i] = strings.TrimPrefix(l, "# ")
+		os.WriteFile(path, []byte(strings.Join(edited, "\n")), 0o600)
+		cfg, err := Load(path)
+		if err != nil {
+			t.Errorf("%s: %v", key, err)
+			continue
+		}
+		if !examples[key] && !reflect.DeepEqual(cfg, Default()) {
+			t.Errorf("%s: the file's value is not the default: %+v", key, cfg)
+		}
+	}
+	if settings != 14 {
+		t.Errorf("%d settings in the default file, want 14", settings)
+	}
+	// An existing file is never touched.
+	os.WriteFile(path, []byte("interval = 90\n"), 0o600)
+	if wrote, err := WriteDefault(path); err != nil || wrote {
+		t.Errorf("WriteDefault over a file = %v, %v", wrote, err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "interval = 90\n" {
+		t.Errorf("existing file changed: %q", data)
+	}
+}
+
+func TestAutoAddRepos(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if cfg, _ := Load(path); !cfg.AutoAddsRepo("any/repo") {
+		t.Error("an empty list should allow every repository")
+	}
+	os.WriteFile(path, []byte("[autoadd]\nrepos = [\"OSAC-project/*\", \"medik8s/node-*\"]\n"), 0o600)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for repo, want := range map[string]bool{
+		"osac-project/osac": true, "Osac-Project/enhancement-proposals": true,
+		"medik8s/node-healthcheck-operator": true, "medik8s/sbd": false,
+		"osac-project-fork/osac": false, "other/osac-project": false,
+	} {
+		if cfg.AutoAddsRepo(repo) != want {
+			t.Errorf("AutoAddsRepo(%q) = %v", repo, !want)
+		}
+	}
+	for _, bad := range []string{"[autoadd]\nrepos = [\"osac-project\"]\n", "[autoadd]\nrepos = [\"o/[x\"]\n", "[autoadd]\nrepos = \"o/*\"\n"} {
+		os.WriteFile(path, []byte(bad), 0o600)
+		if _, err := Load(path); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
 	}
 }

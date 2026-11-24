@@ -418,3 +418,38 @@ func TestReplyAndResolve(t *testing.T) {
 		t.Errorf("GraphQL error not reported: %v", err)
 	}
 }
+
+func TestDiscover(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Query string }
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &req)
+		query = req.Query
+		w.Write([]byte(`{"data":{
+		  "s0":{"nodes":[{"number":12,"repository":{"nameWithOwner":"Org/Repo"}},{"number":3,"repository":{"nameWithOwner":"o/x"}}]},
+		  "s1":{"nodes":[{"number":3,"repository":{"nameWithOwner":"o/x"}},{}]}}}`))
+	}))
+	defer srv.Close()
+	gh := github.New()
+	gh.Endpoint = srv.URL
+	gh.TokenFunc = func() (string, error) { return "t", nil }
+
+	got, err := Kind{}.Discover(context.Background(), gh, []string{model.AddedReview, model.AddedAssigned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, `s0: search(query: "is:pr is:open archived:false user-review-requested:@me", type: ISSUE, first: 50)`) ||
+		!strings.Contains(query, `s1: search(query: "is:pr is:open archived:false assignee:@me"`) {
+		t.Errorf("query =\n%s", query)
+	}
+	// IDs are canonical; a PR found by both searches has both reasons;
+	// non-PR nodes (issues come back empty) are skipped.
+	if len(got) != 2 || strings.Join(got["pr:org/repo#12"], ",") != "review requested" ||
+		strings.Join(got["pr:o/x#3"], ",") != "review requested,assigned" {
+		t.Errorf("found = %v", got)
+	}
+	if _, err := (Kind{}).Discover(context.Background(), gh, []string{"authored"}); err == nil {
+		t.Error("unknown reason accepted")
+	}
+}

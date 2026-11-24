@@ -8,7 +8,7 @@
 | Event types enabled when alerts are turned on | Everything | `model.DefaultSettings` enables all five types. |
 | Alerts from the CLI | TUI only | There is no `alerts` subcommand. The socket command exists for the TUI. |
 | macOS | Linux for now, keep it open | Terminal code builds on Linux and the BSDs/macOS. Notifications are behind `notify.Notifier`; the `exec` notifier works anywhere. |
-| Auto-add own PRs | No | The watchlist stays curated by hand. |
+| Auto-add own PRs | No; later revised: auto-add PRs that call for you | Own (authored) PRs are not added. `[autoadd]` in config.toml can add, each on its own, the open PRs requesting your review (from you, not your teams) and those assigned to you. Off by default; see "Auto-add" below. |
 | Re-triggering CI | Moved into scope (M2) | `R` in the TUI: comments `/retest` when a failed check comes from Prow, and calls `rerun-failed-jobs` for each failed Actions workflow run. |
 | Required vs optional checks | Distinguish them | GraphQL `isRequired` per check. When any check is required, only required checks decide the PR state. Optional checks show `opt`. |
 | External plugins | Yes, gh-extension style | Notifiers: the `exec` notifier pipes JSON on stdin to any command. Item kinds as external executables are left for later; the kind interface and snapshot contract are the seams. |
@@ -88,8 +88,31 @@ can be swapped out.
 - **Rate limit**: one GraphQL query per poll (up to 40 PRs per request).
   GitHub charges a query by the connections it reads, and each review
   thread's comments are one: comments make a poll cost about 56 requests
-  per PR instead of 3. With 20 PRs every 60 s, that is about 11 points a
-  poll, some 13% of the hourly budget of 5,000.
+  per PR instead of 3. With 20 PRs, that is about 11 points a poll.
+- **Poll interval**: 30 minutes by default. PRs rarely change by the
+  minute, and a check that just failed can wait; `p` polls at once when
+  it cannot. At 30 minutes, 20 PRs cost about 22 points an hour, under
+  0.5% of the budget of 5,000 (polling every minute cost some 13%).
+- **Auto-add**: the daemon searches GitHub with each poll (and on `p`),
+  one GraphQL request for both searches. A PR it adds goes into the
+  watchlist with a `# auto: …` note, so the file stays the single list
+  and can still be edited by hand. Removing an auto-added PR, with `d` or
+  in the file, dismisses it for good (`dismissed` in the snapshot); adding
+  it by hand lifts that. GitHub ends a review request both when you
+  review and when you are removed from the reviewers, and the search
+  cannot tell them apart; ghwatch can, from the reviews it fetches. So an
+  auto-added PR goes away on its own when its review request ends without
+  a review of yours, or when you are unassigned, and stays when you
+  reviewed it, since that is when the author's answer matters. This is
+  decided after the poll's fetch, so a review just submitted is seen. A
+  PR removed this way is not dismissed: it comes back if it calls for you
+  again. Reasons whose toggle is off are left alone, so turning a toggle
+  off removes nothing. `max` (20) caps how many are watched at once, and
+  `repos` (glob patterns on owner/repo, case ignored) limits the
+  repositories; the search itself is not narrowed, the results are, so a
+  repository dropped from the list sheds its auto-added PRs like any PR
+  that stopped calling for you.
+
 - **Comments**: what is new is decided locally, from when you last looked
   at the PR in ghwatch (`comments_read_at`). GitHub's own read state
   needs the notifications API and a token scope `gh` does not always

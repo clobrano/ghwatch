@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -215,8 +216,10 @@ func backoff(interval time.Duration, failures int) time.Duration {
 	return min(d, 15*time.Minute)
 }
 
-// Poll fetches every watched item once and applies the result.
+// Poll fetches every watched item once and applies the result. When
+// auto-add is on, it first adds the PRs that call for the user.
 func (d *Daemon) Poll(ctx context.Context) (*github.RateLimit, error) {
+	found, searched := d.discover(ctx)
 	d.mu.Lock()
 	byKind := map[string][]string{}
 	var order []string
@@ -259,6 +262,11 @@ func (d *Daemon) Poll(ctx context.Context) (*github.RateLimit, error) {
 	var notes []notify.Notification
 	for _, it := range fetched {
 		notes = append(notes, d.applyLocked(it)...)
+	}
+	// Removals need this poll's data: a review just submitted also ends
+	// the review request.
+	if searched != nil && err == nil {
+		d.pruneLocked(found, searched)
 	}
 	d.snap.Stale = err != nil
 	d.snap.Error = ""
@@ -305,6 +313,7 @@ func (d *Daemon) applyLocked(cur model.Item) []notify.Notification {
 	cur.Alerts = prev.Alerts
 	cur.WatchedChecks = prev.WatchedChecks
 	cur.WatchedThreads = prev.WatchedThreads
+	cur.Added = prev.Added
 	cur.Muted = prev.Muted
 	cur.CommentsReadAt = prev.CommentsReadAt
 	if cur.CommentsReadAt.IsZero() {
@@ -383,6 +392,7 @@ func (d *Daemon) Snapshot() *model.Snapshot {
 func (d *Daemon) copyLocked() *model.Snapshot {
 	s := d.snap
 	s.Items = append([]model.Item(nil), d.snap.Items...)
+	s.Dismissed = slices.Clone(d.snap.Dismissed)
 	s.Settings.Events = map[model.EventType]bool{}
 	for k, v := range d.snap.Settings.Events {
 		s.Settings.Events[k] = v
@@ -456,6 +466,7 @@ func (d *Daemon) loadState() {
 		return
 	}
 	d.snap.Items = s.Items
+	d.snap.Dismissed = s.Dismissed
 	d.snap.PolledAt = s.PolledAt
 	d.snap.Settings.Mute = s.Settings.Mute
 	for k, v := range s.Settings.Events {
@@ -496,6 +507,17 @@ func (d *Daemon) setIDsLocked(ids []string) {
 	old := map[string]model.Item{}
 	for _, it := range d.snap.Items {
 		old[it.ID] = it
+	}
+	// An auto-added item the user removed (with d or by editing the file)
+	// is not added again.
+	keep := map[string]bool{}
+	for _, id := range ids {
+		keep[id] = true
+	}
+	for _, it := range d.snap.Items {
+		if len(it.Added) > 0 && !keep[it.ID] && !slices.Contains(d.snap.Dismissed, it.ID) {
+			d.snap.Dismissed = append(d.snap.Dismissed, it.ID)
+		}
 	}
 	items := make([]model.Item, 0, len(ids))
 	for _, id := range ids {
@@ -718,6 +740,8 @@ func (d *Daemon) add(ctx context.Context, input string) (string, error) {
 	if !changed {
 		return "already watching " + id, nil
 	}
+	// Added by hand: auto-add may add it again after a later removal.
+	d.snap.Dismissed = slices.DeleteFunc(d.snap.Dismissed, func(x string) bool { return x == id })
 	if err := d.syncWatchlistLocked(); err != nil {
 		return "", err
 	}
@@ -781,6 +805,175 @@ func (d *Daemon) retest(ctx context.Context, id string) (string, error) {
 		d.RequestPoll()
 	}
 	return info, err
+}
+
+// discover adds the PRs that call for the user, per the auto-add
+// settings: those requesting their review and those assigned to them.
+// New ones are marked unseen; dismissed ones stay out; at most
+// AutoAddMax auto-added items are watched.
+func (d *Daemon) discover(ctx context.Context) (found map[string][]string, searched []string) {
+	var reasons []string
+	if d.Config.AutoAddReviews {
+		reasons = append(reasons, model.AddedReview)
+	}
+	if d.Config.AutoAddAssigned {
+		reasons = append(reasons, model.AddedAssigned)
+	}
+	if len(reasons) == 0 || d.Kinds == nil {
+		return nil, nil
+	}
+	found = map[string][]string{}
+	for _, k := range d.Kinds.All() {
+		disc, ok := k.(kind.Discoverer)
+		if !ok {
+			continue
+		}
+		d.fetches.Add(1)
+		got, err := disc.Discover(ctx, d.GH, reasons)
+		if err != nil {
+			d.Log.Printf("auto-add: %v", err)
+			return nil, nil // without results, nothing is removed either
+		}
+		for id, r := range got {
+			if d.Config.AutoAddsRepo(k.Stub(id).Repo) {
+				found[id] = r
+			}
+		}
+	}
+	ids := make([]string, 0, len(found))
+	for id := range found {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	auto := 0
+	watched := map[string]bool{}
+	for _, it := range d.snap.Items {
+		watched[it.ID] = true
+		if len(it.Added) > 0 {
+			auto++
+		}
+	}
+	var added []string
+	for _, id := range ids {
+		if watched[id] || slices.Contains(d.snap.Dismissed, id) {
+			continue
+		}
+		if auto >= d.Config.AutoAddMax {
+			d.Log.Printf("auto-add: %d PRs already added automatically (max %d); not adding %s", auto, d.Config.AutoAddMax, id)
+			break
+		}
+		if _, err := watchlist.AddNoted(d.Paths.Watchlist(), id, "auto: "+strings.Join(found[id], ", "), d.parse); err != nil {
+			d.Log.Printf("auto-add %s: %v", id, err)
+			continue
+		}
+		added = append(added, id)
+		auto++
+	}
+	if len(added) == 0 {
+		return found, reasons
+	}
+	if err := d.syncWatchlistLocked(); err != nil {
+		d.Log.Printf("auto-add: %v", err)
+		return found, reasons
+	}
+	for i := range d.snap.Items {
+		if it := &d.snap.Items[i]; slices.Contains(added, it.ID) {
+			it.Added, it.Unseen = found[it.ID], true
+		}
+	}
+	d.Log.Printf("auto-add: added %s", strings.Join(added, ", "))
+	var refs []string
+	for _, id := range added {
+		refs = append(refs, ref(*d.snap.Find(id)))
+	}
+	d.noticeLocked("added " + strings.Join(refs, ", "))
+	d.publishLocked()
+	return found, reasons
+}
+
+// pruneLocked updates the reasons of auto-added items after a poll, from
+// what the searches found (for the reasons searched): a review request
+// that went away still counts when the user reviewed the PR (they may
+// want the author's answer), not when they were removed or removed
+// themselves. An item left without reasons leaves the watchlist; unlike
+// a removal by the user, it is not dismissed, so it comes back if it
+// calls for the user again. Items added by hand are never touched.
+func (d *Daemon) pruneLocked(found map[string][]string, searched []string) {
+	var removed []string
+	var why []string
+	for i := range d.snap.Items {
+		it := &d.snap.Items[i]
+		if len(it.Added) == 0 {
+			continue
+		}
+		var keep []string
+		for _, r := range it.Added {
+			switch {
+			case !slices.Contains(searched, r): // toggle off: left as is
+			case slices.Contains(found[it.ID], r):
+			case r == model.AddedReview && reviewedByUser(*it):
+			default:
+				continue
+			}
+			keep = append(keep, r)
+		}
+		for _, r := range found[it.ID] { // a new reason, e.g. now assigned
+			if !slices.Contains(keep, r) {
+				keep = append(keep, r)
+			}
+		}
+		if len(keep) > 0 {
+			it.Added = keep
+			continue
+		}
+		what := "no longer requests your review"
+		if slices.Contains(it.Added, model.AddedAssigned) {
+			what = "no longer assigned to you"
+			if slices.Contains(it.Added, model.AddedReview) {
+				what = "no longer assigned to you nor requests your review"
+			}
+		}
+		it.Added = nil // removed by ghwatch: not a dismissal
+		if _, err := watchlist.Remove(d.Paths.Watchlist(), it.ID, d.parse); err != nil {
+			d.Log.Printf("auto-add: remove %s: %v", it.ID, err)
+			continue
+		}
+		removed = append(removed, it.ID)
+		why = append(why, ref(*it)+": "+what)
+	}
+	if len(removed) == 0 {
+		return
+	}
+	if err := d.syncWatchlistLocked(); err != nil {
+		d.Log.Printf("auto-add: %v", err)
+	}
+	d.Log.Printf("auto-add: removed %s", strings.Join(removed, ", "))
+	d.noticeLocked("removed " + strings.Join(why, "; "))
+}
+
+// reviewedByUser reports whether the user submitted a review of it, among
+// the reviews fetched (the latest 20).
+func reviewedByUser(it model.Item) bool {
+	for _, t := range it.Threads {
+		if t.ID != model.ConversationID {
+			continue
+		}
+		for _, c := range t.Comments {
+			if c.Mine && c.Review != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// noticeLocked tells the TUIs something happened on its own, such as a
+// PR added or removed by auto-add.
+func (d *Daemon) noticeLocked(msg string) {
+	d.snap.Notice, d.snap.NoticeAt = msg, d.now()
 }
 
 // discuss replies in a comment thread, or resolves one, then polls so

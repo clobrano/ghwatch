@@ -33,6 +33,8 @@ it. From top to bottom:
     While the PR is in a merge queue, the queue comes first.
   - `comments:` new comments and unresolved review threads.
   - `alerts:` the notifications set on the PR, its jobs and threads.
+  - `added:` why ghwatch added the PR on its own (`your review is
+    requested`, `assigned to you`); see `[autoadd]` in the README.
   - `labels:` each label in bold in its GitHub color, lightened just
     enough to read on the background when GitHub's color is too dark
     (darkened with the light flavor).
@@ -117,6 +119,14 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `p` | ask the daemon to poll now |
 | `?` | all keys; `tab` there shows the legend of icons and marks (`?` or `esc` closes it) |
 | `q` | quit this TUI (the daemon keeps running) |
+
+## Auto-added PRs
+
+With `[autoadd]` on (see the README), ghwatch adds the PRs requesting
+your review or assigned to you. Their tab gets the `•` mark when they
+arrive, and the header an `added:` row saying why. They stay until you
+remove them with `d`, which also keeps them from being added again; the
+README's "Keeping the tab list short" covers the other ways.
 
 ## Comments
 

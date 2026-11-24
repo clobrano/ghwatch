@@ -1396,3 +1396,37 @@ func TestCheckRowTags(t *testing.T) {
 		}
 	}
 }
+
+func TestAddedRow(t *testing.T) {
+	m, _ := newModel()
+	s := snapshot()
+	s.Items[0].Added = []string{model.AddedReview, model.AddedAssigned}
+	m.SetSnapshot(s)
+	if got := headerRow(m.View(100, 24), "added"); got != " added:    your review is requested · assigned to you" {
+		t.Errorf("added row = %q", got)
+	}
+	keys(m, "2") // added by hand: no row
+	if got := headerRow(m.View(100, 24), "added"); got != "" {
+		t.Errorf("added row for a PR added by hand = %q", got)
+	}
+}
+
+func TestNotice(t *testing.T) {
+	m := NewModel(&fakeBackend{})
+	m.now = func() time.Time { return now }
+	m.Color = false
+	m.SetConnected(true)
+	s := snapshot()
+	s.Notice, s.NoticeAt = "added org/repo#9", now.Add(-time.Hour)
+	m.SetSnapshot(s)
+	footer := func() string { return m.View(100, 20)[19] }
+	if strings.Contains(footer(), "added org/repo#9") {
+		t.Errorf("an old notice was shown at start: %q", footer())
+	}
+	s = snapshot()
+	s.Notice, s.NoticeAt = "removed org/repo#9: no longer requests your review", now
+	m.SetSnapshot(s)
+	if !strings.Contains(footer(), "removed org/repo#9: no longer requests your review") {
+		t.Errorf("new notice not shown: %q", footer())
+	}
+}

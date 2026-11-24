@@ -163,6 +163,9 @@ type Item struct {
 	// Muted silences all of the item's notifications, its Alerts and its
 	// watched checks and threads, while keeping them to restore on unmute.
 	Muted bool `json:"muted,omitempty"`
+	// Added says why ghwatch added the item on its own (AddedReview,
+	// AddedAssigned); empty for items the user added.
+	Added []string `json:"added,omitempty"`
 	// Threads are the item's comment threads: its conversation, then its
 	// review threads on code.
 	Threads []Thread `json:"threads,omitempty"`
@@ -237,6 +240,12 @@ func (it Item) LatestComment() time.Time {
 	}
 	return last
 }
+
+// Reasons for adding an item automatically.
+const (
+	AddedReview   = "review requested"
+	AddedAssigned = "assigned"
+)
 
 // ConversationID is the Thread.ID of an item's main conversation.
 const ConversationID = "conversation"
@@ -433,6 +442,13 @@ type Snapshot struct {
 	Error    string    `json:"error,omitempty"`
 	Items    []Item    `json:"items"`
 	Settings Settings  `json:"settings"`
+	// Notice is a message for the user about something the daemon did on
+	// its own (auto-add adding or removing PRs), from NoticeAt.
+	Notice   string    `json:"notice,omitempty"`
+	NoticeAt time.Time `json:"notice_at,omitzero"`
+	// Dismissed are the IDs of auto-added items the user removed: they
+	// are not added again.
+	Dismissed []string `json:"dismissed,omitempty"`
 }
 
 // Find returns the item with the given ID, or nil.

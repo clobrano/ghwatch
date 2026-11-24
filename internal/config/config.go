@@ -94,9 +94,34 @@ type Config struct {
 	// Theme is the TUI's Catppuccin flavor: latte, frappe (the default),
 	// macchiato or mocha.
 	Theme string
+	// AutoAddReviews adds the open PRs requesting the user's review to
+	// the watchlist; AutoAddAssigned, those assigned to the user.
+	AutoAddReviews  bool
+	AutoAddAssigned bool
+	// AutoAddMax caps how many auto-added PRs are watched at once.
+	AutoAddMax int
+	// AutoAddRepos are glob patterns (filepath.Match, lower case) of the
+	// owner/repo names auto-add looks at; empty means every repository.
+	AutoAddRepos []string
 	// IgnoreAuthors are GitHub logins, lower case, whose comments are
 	// never new and never notify.
 	IgnoreAuthors []string
+}
+
+// AutoAddsRepo reports whether auto-add looks at the repository
+// owner/name: any, when AutoAddRepos is empty, else those matching one
+// of its patterns ("my-org/*" matches every repository of my-org).
+func (c Config) AutoAddsRepo(repo string) bool {
+	if len(c.AutoAddRepos) == 0 {
+		return true
+	}
+	repo = strings.ToLower(repo)
+	for _, p := range c.AutoAddRepos {
+		if ok, _ := filepath.Match(p, repo); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Ignores reports whether comments by login are ignored. A "[bot]"
@@ -114,14 +139,97 @@ func (c Config) Ignores(login string) bool {
 // Default returns the built-in configuration.
 func Default() Config {
 	return Config{
-		Interval:       60 * time.Second,
+		Interval:       30 * time.Minute, // PRs change slowly; p polls at once
 		StatusTemplate: DefaultStatusTemplate,
 		Notifier:       "desktop",
 		AutoStart:      true,
 		Icons:          "fancy",
 		Theme:          "frappe",
+		AutoAddMax:     20,
 		NotifyTimeout:  30 * time.Second,
 	}
+}
+
+// defaultFile is the config.toml WriteDefault creates: every setting,
+// commented out with its default value and what it does. Comments keep
+// the defaults ghwatch's own, so a later default reaches existing users;
+// uncommenting a line changes it.
+var defaultFile = `# ghwatch configuration.
+#
+# Every setting is commented out, showing its default: ghwatch uses its
+# built-in value. Uncomment a line to change it. After editing, run
+# "ghwatch stop" so the background daemon starts again with it.
+
+# How often to poll GitHub (minimum 10s). p in the TUI polls at once.
+# interval = "30m"
+
+# Command that opens links. Default: $BROWSER, then xdg-open.
+# browser = "firefox"
+
+# Icon set: "fancy", or "safe" if some icons show as boxes
+# (run "ghwatch icons" to compare them).
+# icons = "fancy"
+
+# Colors: a Catppuccin flavor, latte, frappe, macchiato or mocha.
+# Pick the one closest to your terminal's background.
+# theme = "frappe"
+
+# Summary printed by "ghwatch status", e.g. for the tmux status line:
+# a Go text/template (see the README for its fields).
+# status_template = '` + DefaultStatusTemplate + `'
+
+[notify]
+# Where notifications go: desktop (notify-send), exec, or none.
+# backend = "desktop"
+# How long a desktop notification stays on screen ("0": until dismissed).
+# timeout = "30s"
+# For backend = "exec": a command reading each notification as JSON.
+# command = "curl -s -d @- ntfy.sh/my-topic"
+
+[comments]
+# GitHub logins whose comments are never new and never notify (bots,
+# say). Your own comments never count.
+# ignore_authors = ["openshift-ci-robot", "openshift-merge-robot"]
+
+[autoadd]
+# Watch, on their own, the open PRs requesting your review...
+# review_requested = false
+# ...and those assigned to you.
+# assigned = false
+# At most this many auto-added PRs at once.
+# max = 20
+# Only in these repositories (owner/repo, * ? [ ] wildcards); all when
+# empty. A PR from a repository dropped from the list is removed, unless
+# you reviewed it.
+# repos = ["my-org/*", "other-org/some-repo"]
+
+[daemon]
+# Start the background daemon when a TUI needs it.
+# autostart = true
+`
+
+// WriteDefault writes the commented default configuration to path when
+// no file is there; an existing file is never touched. It reports
+// whether it wrote one.
+func WriteDefault(path string) (bool, error) {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if os.IsExist(err) {
+		return false, nil // written meanwhile by another ghwatch
+	}
+	if err != nil {
+		return false, err
+	}
+	if _, err := f.WriteString(defaultFile); err != nil {
+		f.Close()
+		return false, err
+	}
+	return true, f.Close()
 }
 
 // Load reads config.toml; a missing file yields the defaults.
@@ -197,6 +305,36 @@ func Load(path string) (Config, error) {
 					err = fmt.Errorf("want a Catppuccin flavor: latte, frappe, macchiato or mocha")
 				}
 			}
+		case "autoadd.review_requested", "autoadd.assigned":
+			b, ok := v.(bool)
+			if !ok {
+				err = fmt.Errorf("want true or false")
+			}
+			if k == "autoadd.assigned" {
+				cfg.AutoAddAssigned = b
+			} else {
+				cfg.AutoAddReviews = b
+			}
+		case "autoadd.repos":
+			list, ok := v.([]string)
+			if !ok {
+				err = fmt.Errorf("want a list of owner/repo patterns, e.g. [\"my-org/*\"]")
+			}
+			cfg.AutoAddRepos = nil
+			for _, p := range list {
+				p = strings.ToLower(strings.TrimSpace(p))
+				if _, perr := filepath.Match(p, ""); perr != nil || !strings.Contains(p, "/") {
+					err = fmt.Errorf("bad pattern %q: want owner/repo, with * ? [ ] wildcards", p)
+					break
+				}
+				cfg.AutoAddRepos = append(cfg.AutoAddRepos, p)
+			}
+		case "autoadd.max":
+			n, ok := v.(int64)
+			if !ok || n < 1 {
+				err = fmt.Errorf("want a number of PRs, at least 1")
+			}
+			cfg.AutoAddMax = int(n)
 		case "autostart", "daemon.autostart":
 			b, ok := v.(bool)
 			if !ok {

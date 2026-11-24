@@ -66,3 +66,21 @@ func TestMissingFile(t *testing.T) {
 		t.Errorf("stat = %v, %v", fi, err)
 	}
 }
+
+func TestAddNoted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "watch")
+	if changed, err := AddNoted(path, "pr:org/repo#4", "auto: review requested", parse); err != nil || !changed {
+		t.Fatalf("AddNoted = %v, %v", changed, err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "pr:org/repo#4  # auto: review requested\n" {
+		t.Errorf("file = %q", data)
+	}
+	// The note is a comment: the entry loads, and removes, as usual.
+	if ids, _, _ := Load(path, parse); len(ids) != 1 || ids[0] != "pr:org/repo#4" {
+		t.Errorf("ids = %v", ids)
+	}
+	if changed, _ := Remove(path, "pr:org/repo#4", parse); !changed {
+		t.Error("noted entry not removed")
+	}
+}
