@@ -106,7 +106,7 @@ ghwatch icons                          # preview the icon sets
 Optional, in `~/.config/ghwatch/config.toml`:
 
 ```toml
-interval = "60s"            # how often to poll GitHub (minimum 10s)
+interval = "30m"            # how often to poll GitHub (minimum 10s); p polls at once
 browser = "firefox"         # default: $BROWSER, then xdg-open
 icons = "fancy"             # or "safe" if some icons show as boxes
 theme = "frappe"            # Catppuccin flavor: latte, frappe, macchiato or mocha

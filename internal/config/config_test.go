@@ -11,7 +11,7 @@ import (
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	if cfg, err := Load(path); err != nil || cfg.Interval != time.Minute || cfg.Notifier != "desktop" {
+	if cfg, err := Load(path); err != nil || cfg.Interval != 30*time.Minute || cfg.Notifier != "desktop" {
 		t.Fatalf("defaults = %+v, %v", cfg, err)
 	}
 	os.WriteFile(path, []byte(`
