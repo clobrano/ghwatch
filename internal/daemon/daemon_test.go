@@ -863,8 +863,8 @@ func TestAutoRemove(t *testing.T) {
 	}}
 	for n := 1; n <= 5; n++ {
 		it := model.Item{ID: fmt.Sprintf("pr:o/r#%d", n), Repo: "o/r", Number: n, HeadSHA: "a", Lifecycle: model.Open}
-		if n == 3 { // the user approved #3
-			it.Threads = []model.Thread{{ID: model.ConversationID, Comments: []model.Comment{{ID: "R1", Review: "approved", Mine: true}}}}
+		if n == 3 { // the user approved #3, as GitHub records it
+			it.Review = model.MyReview{State: "approved"}
 		}
 		fake.set(it)
 	}
@@ -948,5 +948,22 @@ func TestAutoAddRepos(t *testing.T) {
 	time.Sleep(settle)
 	if len(s.Items) != 1 || s.Items[0].ID != "pr:mine/a#1" {
 		t.Errorf("items = %+v", s.Items)
+	}
+}
+
+func TestReviewedByUser(t *testing.T) {
+	for _, tc := range []struct {
+		it   model.Item
+		want bool
+	}{
+		{model.Item{}, false},
+		{model.Item{Review: model.MyReview{State: "commented"}}, true},
+		{model.Item{Review: model.MyReview{State: "pending"}}, false}, // a draft is not a review yet
+		{model.Item{Threads: []model.Thread{{ID: model.ConversationID, Comments: []model.Comment{{Review: "approved", Mine: true}}}}}, true},
+		{model.Item{Threads: []model.Thread{{ID: model.ConversationID, Comments: []model.Comment{{Mine: true}, {Review: "approved"}}}}}, false},
+	} {
+		if got := reviewedByUser(tc.it); got != tc.want {
+			t.Errorf("%+v: %v", tc.it, got)
+		}
 	}
 }

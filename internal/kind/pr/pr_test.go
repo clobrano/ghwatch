@@ -453,3 +453,31 @@ func TestDiscover(t *testing.T) {
 		t.Error("unknown reason accepted")
 	}
 }
+
+func TestViewerReview(t *testing.T) {
+	parse := func(js string) model.Item {
+		var p prNode
+		if err := json.Unmarshal([]byte(js), &p); err != nil {
+			t.Fatal(err)
+		}
+		return p.toItem("pr:o/r#1", "o/r")
+	}
+	it := parse(`{"number":1,"state":"OPEN","headRefOid":"a",
+	  "viewerLatestReview":{"state":"CHANGES_REQUESTED","submittedAt":"2026-01-01T10:00:00Z"},
+	  "viewerLatestReviewRequest":{"requestedReviewer":{"__typename":"User"}}}`)
+	if r := it.Review; !r.Requested || r.Team != "" || r.State != "changes_requested" || r.At.IsZero() || !r.Reviewed() {
+		t.Errorf("review = %+v", r)
+	}
+	it = parse(`{"number":1,"state":"OPEN","headRefOid":"a",
+	  "viewerLatestReview":{"state":"PENDING","submittedAt":null},
+	  "viewerLatestReviewRequest":{"requestedReviewer":{"__typename":"Team","name":"nhc-reviewers"}}}`)
+	if r := it.Review; !r.Requested || r.Team != "nhc-reviewers" || r.State != "pending" || r.Reviewed() {
+		t.Errorf("review = %+v", r)
+	}
+	if r := parse(`{"number":1,"state":"OPEN","headRefOid":"a","viewerLatestReview":null,"viewerLatestReviewRequest":null}`).Review; r != (model.MyReview{}) {
+		t.Errorf("review = %+v", r)
+	}
+	if !strings.Contains(prSelection, "viewerLatestReview { state submittedAt }") || !strings.Contains(prSelection, "viewerLatestReviewRequest") {
+		t.Error("the query does not ask for the viewer's review")
+	}
+}

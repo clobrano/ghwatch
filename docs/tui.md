@@ -33,8 +33,16 @@ it. From top to bottom:
     While the PR is in a merge queue, the queue comes first.
   - `comments:` new comments and unresolved review threads.
   - `alerts:` the notifications set on the PR, its jobs and threads.
-  - `added:` why ghwatch added the PR on its own (`your review is
-    requested`, `assigned to you`); see `[autoadd]` in the README.
+  - `review:` where you stand as a reviewer, from GitHub's own record:
+    whether your review is requested (`requested from you`, or from one
+    of your teams, `requested from nhc-reviewers`; `again` when you had
+    reviewed), then your latest review (`you approved · 2h ago`, `you
+    requested changes`, `you commented`, `your review was dismissed`,
+    `your review is a draft, not submitted`), or `not reviewed yet`.
+    Shown only when you have a part in the review.
+  - `added:` that ghwatch added the PR on its own, and why
+    (`automatically: your review was requested, assigned to you`); see
+    `[autoadd]` in the README.
   - `labels:` each label in bold in its GitHub color, lightened just
     enough to read on the background when GitHub's color is too dark
     (darkened with the light flavor).
