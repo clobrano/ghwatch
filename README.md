@@ -148,8 +148,31 @@ max = 20                    # at most this many auto-added PRs at once
 - **Auto-add:** with `review_requested` and/or `assigned` on, ghwatch
   adds the open PRs requesting your review (from you, not your teams) or
   assigned to you, at each poll. They are marked `# auto: …` in the
-  watchlist and get an `added:` row in the TUI. Remove one (`d`) and it
-  is not added again; it stays after you review it or are unassigned.
+  watchlist and get an `added:` row in the TUI. See
+  [keeping the tab list short](#keeping-the-tab-list-short).
+
+### Keeping the tab list short
+
+Auto-added PRs stay until you remove them: after you review them, after
+you are unassigned, and after they are merged or closed. To stop seeing
+them:
+
+- **One PR:** press `d` on its tab (or `ghwatch rm <PR>`, or delete its
+  line in the watchlist). An auto-added PR removed this way is dismissed:
+  it is not added again, even while your review is still requested. To
+  follow it again, add it back with `a` or `ghwatch add`.
+- **Fewer at once:** lower `max` under `[autoadd]` (20 by default). Once
+  that many auto-added PRs are watched, no more are added until you
+  remove some.
+- **None at all:** set `review_requested` and `assigned` back to `false`
+  (or delete them), then run `ghwatch stop`. No more PRs are added, but
+  the ones already added stay: remove them with `d`, or delete their
+  `# auto:` lines in the watchlist.
+- **Keep it, without the noise:** `m` mutes a PR's notifications.
+
+Dismissals live in ghwatch's state file
+(`~/.local/state/ghwatch/snapshot.json`): if that file is deleted, the
+PRs you dismissed can be added again.
 
 ### Requirements
 

@@ -120,6 +120,14 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `?` | all keys; `tab` there shows the legend of icons and marks (`?` or `esc` closes it) |
 | `q` | quit this TUI (the daemon keeps running) |
 
+## Auto-added PRs
+
+With `[autoadd]` on (see the README), ghwatch adds the PRs requesting
+your review or assigned to you. Their tab gets the `•` mark when they
+arrive, and the header an `added:` row saying why. They stay until you
+remove them with `d`, which also keeps them from being added again; the
+README's "Keeping the tab list short" covers the other ways.
+
 ## Comments
 
 A comment is new when it was written after you last looked at the PR:
