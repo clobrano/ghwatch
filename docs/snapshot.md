@@ -20,6 +20,8 @@ changing the meaning of a field bumps `schema`.
     }
   },
   "dismissed": ["pr:org/repo#7"], // auto-added items you removed: not added again (omitted when none)
+  "notice": "removed org/repo#7: no longer requests your review", // what the daemon did on its own (omitted when none)
+  "notice_at": "…",           // when
   "items": [{                  // watchlist order
     "kind": "pr",
     "id": "pr:org/repo#123",   // kind-namespaced, lower case

@@ -219,7 +219,7 @@ func backoff(interval time.Duration, failures int) time.Duration {
 // Poll fetches every watched item once and applies the result. When
 // auto-add is on, it first adds the PRs that call for the user.
 func (d *Daemon) Poll(ctx context.Context) (*github.RateLimit, error) {
-	d.discover(ctx)
+	found, searched := d.discover(ctx)
 	d.mu.Lock()
 	byKind := map[string][]string{}
 	var order []string
@@ -262,6 +262,11 @@ func (d *Daemon) Poll(ctx context.Context) (*github.RateLimit, error) {
 	var notes []notify.Notification
 	for _, it := range fetched {
 		notes = append(notes, d.applyLocked(it)...)
+	}
+	// Removals need this poll's data: a review just submitted also ends
+	// the review request.
+	if searched != nil && err == nil {
+		d.pruneLocked(found, searched)
 	}
 	d.snap.Stale = err != nil
 	d.snap.Error = ""
@@ -806,7 +811,7 @@ func (d *Daemon) retest(ctx context.Context, id string) (string, error) {
 // settings: those requesting their review and those assigned to them.
 // New ones are marked unseen; dismissed ones stay out; at most
 // AutoAddMax auto-added items are watched.
-func (d *Daemon) discover(ctx context.Context) {
+func (d *Daemon) discover(ctx context.Context) (found map[string][]string, searched []string) {
 	var reasons []string
 	if d.Config.AutoAddReviews {
 		reasons = append(reasons, model.AddedReview)
@@ -815,9 +820,9 @@ func (d *Daemon) discover(ctx context.Context) {
 		reasons = append(reasons, model.AddedAssigned)
 	}
 	if len(reasons) == 0 || d.Kinds == nil {
-		return
+		return nil, nil
 	}
-	found := map[string][]string{}
+	found = map[string][]string{}
 	for _, k := range d.Kinds.All() {
 		disc, ok := k.(kind.Discoverer)
 		if !ok {
@@ -827,7 +832,7 @@ func (d *Daemon) discover(ctx context.Context) {
 		got, err := disc.Discover(ctx, d.GH, reasons)
 		if err != nil {
 			d.Log.Printf("auto-add: %v", err)
-			return
+			return nil, nil // without results, nothing is removed either
 		}
 		for id, r := range got {
 			found[id] = r
@@ -866,11 +871,11 @@ func (d *Daemon) discover(ctx context.Context) {
 		auto++
 	}
 	if len(added) == 0 {
-		return
+		return found, reasons
 	}
 	if err := d.syncWatchlistLocked(); err != nil {
 		d.Log.Printf("auto-add: %v", err)
-		return
+		return found, reasons
 	}
 	for i := range d.snap.Items {
 		if it := &d.snap.Items[i]; slices.Contains(added, it.ID) {
@@ -878,7 +883,95 @@ func (d *Daemon) discover(ctx context.Context) {
 		}
 	}
 	d.Log.Printf("auto-add: added %s", strings.Join(added, ", "))
+	var refs []string
+	for _, id := range added {
+		refs = append(refs, ref(*d.snap.Find(id)))
+	}
+	d.noticeLocked("added " + strings.Join(refs, ", "))
 	d.publishLocked()
+	return found, reasons
+}
+
+// pruneLocked updates the reasons of auto-added items after a poll, from
+// what the searches found (for the reasons searched): a review request
+// that went away still counts when the user reviewed the PR (they may
+// want the author's answer), not when they were removed or removed
+// themselves. An item left without reasons leaves the watchlist; unlike
+// a removal by the user, it is not dismissed, so it comes back if it
+// calls for the user again. Items added by hand are never touched.
+func (d *Daemon) pruneLocked(found map[string][]string, searched []string) {
+	var removed []string
+	var why []string
+	for i := range d.snap.Items {
+		it := &d.snap.Items[i]
+		if len(it.Added) == 0 {
+			continue
+		}
+		var keep []string
+		for _, r := range it.Added {
+			switch {
+			case !slices.Contains(searched, r): // toggle off: left as is
+			case slices.Contains(found[it.ID], r):
+			case r == model.AddedReview && reviewedByUser(*it):
+			default:
+				continue
+			}
+			keep = append(keep, r)
+		}
+		for _, r := range found[it.ID] { // a new reason, e.g. now assigned
+			if !slices.Contains(keep, r) {
+				keep = append(keep, r)
+			}
+		}
+		if len(keep) > 0 {
+			it.Added = keep
+			continue
+		}
+		what := "no longer requests your review"
+		if slices.Contains(it.Added, model.AddedAssigned) {
+			what = "no longer assigned to you"
+			if slices.Contains(it.Added, model.AddedReview) {
+				what = "no longer assigned to you nor requests your review"
+			}
+		}
+		it.Added = nil // removed by ghwatch: not a dismissal
+		if _, err := watchlist.Remove(d.Paths.Watchlist(), it.ID, d.parse); err != nil {
+			d.Log.Printf("auto-add: remove %s: %v", it.ID, err)
+			continue
+		}
+		removed = append(removed, it.ID)
+		why = append(why, ref(*it)+": "+what)
+	}
+	if len(removed) == 0 {
+		return
+	}
+	if err := d.syncWatchlistLocked(); err != nil {
+		d.Log.Printf("auto-add: %v", err)
+	}
+	d.Log.Printf("auto-add: removed %s", strings.Join(removed, ", "))
+	d.noticeLocked("removed " + strings.Join(why, "; "))
+}
+
+// reviewedByUser reports whether the user submitted a review of it, among
+// the reviews fetched (the latest 20).
+func reviewedByUser(it model.Item) bool {
+	for _, t := range it.Threads {
+		if t.ID != model.ConversationID {
+			continue
+		}
+		for _, c := range t.Comments {
+			if c.Mine && c.Review != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// noticeLocked tells the TUIs something happened on its own, such as a
+// PR added or removed by auto-add.
+func (d *Daemon) noticeLocked(msg string) {
+	d.snap.Notice, d.snap.NoticeAt = msg, d.now()
 }
 
 // discuss replies in a comment thread, or resolves one, then polls so

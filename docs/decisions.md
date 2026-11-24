@@ -98,9 +98,16 @@ can be swapped out.
   watchlist with a `# auto: …` note, so the file stays the single list
   and can still be edited by hand. Removing an auto-added PR, with `d` or
   in the file, dismisses it for good (`dismissed` in the snapshot); adding
-  it by hand lifts that. Auto-added PRs stay when the reason goes away
-  (your review is submitted, you are unassigned), since that is when the
-  author's answer matters; `max` (20) caps how many are watched at once.
+  it by hand lifts that. GitHub ends a review request both when you
+  review and when you are removed from the reviewers, and the search
+  cannot tell them apart; ghwatch can, from the reviews it fetches. So an
+  auto-added PR goes away on its own when its review request ends without
+  a review of yours, or when you are unassigned, and stays when you
+  reviewed it, since that is when the author's answer matters. This is
+  decided after the poll's fetch, so a review just submitted is seen. A
+  PR removed this way is not dismissed: it comes back if it calls for you
+  again. Reasons whose toggle is off are left alone, so turning a toggle
+  off removes nothing. `max` (20) caps how many are watched at once.
 
 - **Comments**: what is new is decided locally, from when you last looked
   at the PR in ghwatch (`comments_read_at`). GitHub's own read state

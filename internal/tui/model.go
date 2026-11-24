@@ -90,6 +90,8 @@ type Model struct {
 	// with J/K, in lines.
 	cscroll    int
 	cscrollKey string
+	// noticeAt is when the daemon's last notice shown was made.
+	noticeAt time.Time
 	// helpPage is the help panel's page: 0 keys, 1 legend.
 	helpPage int
 	// expanded holds the threads (item ID, NUL, thread ID) showing all
@@ -139,6 +141,14 @@ func (m *Model) items() []model.Item {
 
 // SetSnapshot replaces the displayed state.
 func (m *Model) SetSnapshot(s *model.Snapshot) {
+	// A notice newer than the last one seen shows as a message; the one a
+	// TUI finds at start is old news.
+	if s != nil && s.NoticeAt.After(m.noticeAt) {
+		if m.snap != nil && s.Notice != "" {
+			m.setFlash(s.Notice, false)
+		}
+		m.noticeAt = s.NoticeAt
+	}
 	m.snap = s
 	if s != nil {
 		for _, it := range s.Items {

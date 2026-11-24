@@ -850,3 +850,78 @@ func TestAutoAddOff(t *testing.T) {
 		t.Errorf("searched with auto-add off: %v", fake.reasons)
 	}
 }
+
+func TestAutoRemove(t *testing.T) {
+	paths := testPaths(t)
+	paths.Ensure()
+	os.WriteFile(paths.Watchlist(), []byte("o/r#1\n"), 0o600)
+	fake := &fakePR{items: map[string]model.Item{}, found: map[string][]string{
+		"pr:o/r#2": {model.AddedReview},
+		"pr:o/r#3": {model.AddedReview},
+		"pr:o/r#4": {model.AddedAssigned},
+		"pr:o/r#5": {model.AddedReview, model.AddedAssigned},
+	}}
+	for n := 1; n <= 5; n++ {
+		it := model.Item{ID: fmt.Sprintf("pr:o/r#%d", n), Repo: "o/r", Number: n, HeadSHA: "a", Lifecycle: model.Open}
+		if n == 3 { // the user approved #3
+			it.Threads = []model.Thread{{ID: model.ConversationID, Comments: []model.Comment{{ID: "R1", Review: "approved", Mine: true}}}}
+		}
+		fake.set(it)
+	}
+	cfg := config.Config{Interval: time.Hour, AutoAddReviews: true, AutoAddAssigned: true, AutoAddMax: 10}
+	_, cancel, done := startDaemonWith(t, paths, cfg, fake, &recorder{})
+	defer func() { cancel(); <-done }()
+	c := dial(t, paths)
+	ctx := context.Background()
+	state := func(s *model.Snapshot) string {
+		var out []string
+		for _, it := range s.Items {
+			out = append(out, fmt.Sprintf("%d%v", it.Number, it.Added))
+		}
+		return strings.Join(out, " ")
+	}
+	s := waitFor(t, c, "all added", func(s *model.Snapshot) bool { return len(s.Items) == 5 })
+	if s.Notice != "added o/r#2, o/r#3, o/r#4, o/r#5" {
+		t.Errorf("notice = %q", s.Notice)
+	}
+
+	// The requests and assignments change.
+	fake.mu.Lock()
+	fake.found = map[string][]string{"pr:o/r#5": {model.AddedReview}}
+	fake.mu.Unlock()
+	c.Do(ctx, ipc.Command{Op: ipc.OpPoll})
+	s = waitFor(t, c, "pruned", func(s *model.Snapshot) bool { return len(s.Items) == 3 })
+	if got := state(s); got != "1[] 3[review requested] 5[review requested]" {
+		t.Errorf("items = %s", got)
+	}
+	if s.Notice != "removed o/r#2: no longer requests your review; o/r#4: no longer assigned to you" || len(s.Dismissed) != 0 {
+		t.Errorf("notice = %q, dismissed %v", s.Notice, s.Dismissed)
+	}
+	data, _ := os.ReadFile(paths.Watchlist())
+	if strings.Contains(string(data), "#2") || strings.Contains(string(data), "#4") {
+		t.Errorf("watchlist =\n%s", data)
+	}
+
+	// Not dismissed: requested again, #2 comes back.
+	fake.mu.Lock()
+	fake.found["pr:o/r#2"] = []string{model.AddedReview}
+	fake.mu.Unlock()
+	c.Do(ctx, ipc.Command{Op: ipc.OpPoll})
+	if s := waitFor(t, c, "#2 back", func(s *model.Snapshot) bool { return len(s.Items) == 4 }); s.Find("pr:o/r#2") == nil {
+		t.Errorf("items = %s", state(s))
+	}
+}
+
+func TestPruneKeepsUnsearchedReasons(t *testing.T) {
+	d := &Daemon{Paths: testPaths(t), Log: log.New(io.Discard, "", 0)}
+	d.snap.Items = []model.Item{
+		{ID: "pr:o/r#1", Added: []string{model.AddedReview}},
+		{ID: "pr:o/r#2", Added: []string{model.AddedAssigned, model.AddedReview}},
+	}
+	// Only assignments are searched now (review_requested was turned
+	// off): review requests are left as they are, assignments pruned.
+	d.pruneLocked(map[string][]string{}, []string{model.AddedAssigned})
+	if len(d.snap.Items) != 2 || strings.Join(d.snap.Items[0].Added, ",") != "review requested" || strings.Join(d.snap.Items[1].Added, ",") != "review requested" {
+		t.Errorf("items = %+v", d.snap.Items)
+	}
+}

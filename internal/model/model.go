@@ -442,6 +442,10 @@ type Snapshot struct {
 	Error    string    `json:"error,omitempty"`
 	Items    []Item    `json:"items"`
 	Settings Settings  `json:"settings"`
+	// Notice is a message for the user about something the daemon did on
+	// its own (auto-add adding or removing PRs), from NoticeAt.
+	Notice   string    `json:"notice,omitempty"`
+	NoticeAt time.Time `json:"notice_at,omitzero"`
 	// Dismissed are the IDs of auto-added items the user removed: they
 	// are not added again.
 	Dismissed []string `json:"dismissed,omitempty"`
