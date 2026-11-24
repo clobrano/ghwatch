@@ -180,6 +180,8 @@ const prSelection = `
       mergeQueueEntry { state position enqueuedAt estimatedTimeToMerge mergeQueue { url } }
       comments(last: 20) { totalCount nodes { id author { login } bodyText createdAt url viewerDidAuthor } }
       reviews(last: 20) { nodes { id author { login } bodyText state submittedAt url viewerDidAuthor } }
+      viewerLatestReview { state submittedAt }
+      viewerLatestReviewRequest { requestedReviewer { __typename ... on Team { name } } }
       reviewThreads(last: 50) { nodes {
         id isResolved isOutdated path line originalLine
         comments(last: 5) { totalCount nodes { id author { login } bodyText createdAt url viewerDidAuthor } }
@@ -237,6 +239,16 @@ type prNode struct {
 	Reviews struct {
 		Nodes []commentNode `json:"nodes"`
 	} `json:"reviews"`
+	ViewerLatestReview *struct {
+		State       string     `json:"state"`
+		SubmittedAt *time.Time `json:"submittedAt"`
+	} `json:"viewerLatestReview"`
+	ViewerLatestReviewRequest *struct {
+		RequestedReviewer *struct {
+			Typename string `json:"__typename"`
+			Name     string `json:"name"` // teams
+		} `json:"requestedReviewer"`
+	} `json:"viewerLatestReviewRequest"`
 	ReviewThreads struct {
 		Nodes []struct {
 			ID           string `json:"id"`
@@ -306,6 +318,18 @@ func (p *prNode) toItem(id, repo string) model.Item {
 		it.Checks = []model.Check{}
 	}
 	it.Threads = p.threads()
+	if r := p.ViewerLatestReviewRequest; r != nil {
+		it.Review.Requested = true
+		if rr := r.RequestedReviewer; rr != nil && rr.Typename == "Team" {
+			it.Review.Team = rr.Name
+		}
+	}
+	if r := p.ViewerLatestReview; r != nil && r.State != "" {
+		it.Review.State = strings.ToLower(r.State)
+		if r.SubmittedAt != nil {
+			it.Review.At = *r.SubmittedAt
+		}
+	}
 	it.State = model.ItemState(it)
 	return it
 }

@@ -954,9 +954,13 @@ func (d *Daemon) pruneLocked(found map[string][]string, searched []string) {
 	d.noticeLocked("removed " + strings.Join(why, "; "))
 }
 
-// reviewedByUser reports whether the user submitted a review of it, among
-// the reviews fetched (the latest 20).
+// reviewedByUser reports whether the user submitted a review of it: from
+// GitHub's record of the viewer's latest review, else among the reviews
+// fetched (the latest 20).
 func reviewedByUser(it model.Item) bool {
+	if it.Review.Reviewed() {
+		return true
+	}
 	for _, t := range it.Threads {
 		if t.ID != model.ConversationID {
 			continue

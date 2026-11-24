@@ -1402,7 +1402,7 @@ func TestAddedRow(t *testing.T) {
 	s := snapshot()
 	s.Items[0].Added = []string{model.AddedReview, model.AddedAssigned}
 	m.SetSnapshot(s)
-	if got := headerRow(m.View(100, 24), "added"); got != " added:    your review is requested · assigned to you" {
+	if got := headerRow(m.View(100, 24), "added"); got != " added:    automatically: your review was requested, assigned to you" {
 		t.Errorf("added row = %q", got)
 	}
 	keys(m, "2") // added by hand: no row
@@ -1428,5 +1428,31 @@ func TestNotice(t *testing.T) {
 	m.SetSnapshot(s)
 	if !strings.Contains(footer(), "removed org/repo#9: no longer requests your review") {
 		t.Errorf("new notice not shown: %q", footer())
+	}
+}
+
+func TestReviewRow(t *testing.T) {
+	m, _ := newModel()
+	row := func(r model.MyReview) string {
+		s := snapshot()
+		s.Items[0].Review = r
+		m.SetSnapshot(s)
+		return headerRow(m.View(120, 24), "review")
+	}
+	for _, tc := range []struct {
+		r    model.MyReview
+		want string
+	}{
+		{model.MyReview{}, ""},
+		{model.MyReview{Requested: true}, " review:   requested from you · not reviewed yet"},
+		{model.MyReview{Requested: true, Team: "nhc-reviewers"}, " review:   requested from nhc-reviewers · not reviewed yet"},
+		{model.MyReview{State: "approved", At: now.Add(-2 * time.Hour)}, " review:   you approved · 2h00m ago"},
+		{model.MyReview{Requested: true, State: "approved", At: now.Add(-50 * time.Hour)}, " review:   requested from you again · you approved · 2d2h ago"},
+		{model.MyReview{State: "changes_requested", At: now.Add(-3 * time.Minute)}, " review:   you requested changes · 3m ago"},
+		{model.MyReview{Requested: true, State: "pending"}, " review:   requested from you · your review is a draft, not submitted"},
+	} {
+		if got := row(tc.r); got != tc.want {
+			t.Errorf("%+v: %q, want %q", tc.r, got, tc.want)
+		}
 	}
 }

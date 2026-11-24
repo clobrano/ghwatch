@@ -48,6 +48,12 @@ changing the meaning of a field bumps `schema`.
     "watched_checks": ["e2e"], // jobs with their own notifications (omitted when none)
     "watched_threads": ["conversation"], // comment threads with their own notifications, by id (omitted when none)
     "added": ["review requested", "assigned"], // why ghwatch added the item on its own (omitted when added by hand)
+    "review": {                // your part in the review (omitted when none)
+      "requested": true,       // your review is requested now
+      "team": "nhc-reviewers", // ...from this team, not from you directly (omitted then)
+      "state": "approved",     // your latest review: approved | changes_requested | commented | dismissed | pending (a draft)
+      "at": "…"                // when you submitted it
+    },
     "muted": true,             // alerts, watched_checks and watched_threads silenced, kept to restore (omitted when false)
     "comments_read_at": "…",   // comments newer than this are new; set at the first fetch (omitted before)
     "threads": [{              // the conversation, then review threads in GitHub's order

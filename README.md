@@ -162,8 +162,7 @@ you: you were removed from its reviewers (or removed yourself) without
 reviewing it, or you were unassigned. A message says so, and the PR comes
 back if it calls for you again. It stays when you reviewed it, since
 that is when the author's answer matters, and after it is merged or
-closed. ghwatch looks at the PR's latest 20 reviews to tell whether you
-reviewed it. To stop seeing auto-added PRs yourself:
+closed. To stop seeing auto-added PRs yourself:
 
 - **One PR:** press `d` on its tab (or `ghwatch rm <PR>`, or delete its
   line in the watchlist). An auto-added PR removed this way is dismissed:

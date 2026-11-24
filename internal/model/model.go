@@ -163,6 +163,8 @@ type Item struct {
 	// Muted silences all of the item's notifications, its Alerts and its
 	// watched checks and threads, while keeping them to restore on unmute.
 	Muted bool `json:"muted,omitempty"`
+	// Review is where the user stands as a reviewer of the item.
+	Review MyReview `json:"review,omitzero"`
 	// Added says why ghwatch added the item on its own (AddedReview,
 	// AddedAssigned); empty for items the user added.
 	Added []string `json:"added,omitempty"`
@@ -240,6 +242,22 @@ func (it Item) LatestComment() time.Time {
 	}
 	return last
 }
+
+// MyReview is the user's part in an item's review.
+type MyReview struct {
+	// Requested is set while the user's review is requested; Team names
+	// the team it was requested from, when not from the user directly.
+	Requested bool   `json:"requested,omitempty"`
+	Team      string `json:"team,omitempty"`
+	// State is the user's latest review, lower case: approved,
+	// changes_requested, commented, dismissed, or pending (a draft not
+	// submitted yet). Empty when the user has not reviewed the item.
+	State string    `json:"state,omitempty"`
+	At    time.Time `json:"at,omitzero"`
+}
+
+// Reviewed reports whether the user submitted a review.
+func (r MyReview) Reviewed() bool { return r.State != "" && r.State != "pending" }
 
 // Reasons for adding an item automatically.
 const (

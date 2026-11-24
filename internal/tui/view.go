@@ -393,20 +393,23 @@ func (m *Model) header(w int) []line {
 	if a := alertSegs(it); len(a) > 0 {
 		row("alerts", a...)
 	}
+	if r := m.reviewSegs(it); len(r) > 0 {
+		row("review", r...)
+	}
 	if len(it.Added) > 0 {
 		// Why ghwatch added the PR on its own.
-		var why []seg
+		var why []string
 		for _, r := range it.Added {
 			switch r {
 			case model.AddedReview:
-				why = append(why, seg{"your review is requested", sAccent})
+				why = append(why, "your review was requested")
 			case model.AddedAssigned:
-				why = append(why, seg{"assigned to you", sAccent})
+				why = append(why, "assigned to you")
 			default:
-				why = append(why, seg{r, sAccent})
+				why = append(why, r)
 			}
 		}
-		row("added", why...)
+		row("added", seg{"automatically: " + strings.Join(why, ", "), sSecondary})
 	}
 	if len(it.Labels) > 0 {
 		out = append(out, labelLine(it.Labels))
@@ -502,6 +505,46 @@ func (m *Model) commentSegs(it *model.Item) []seg {
 	}
 	if len(out) == 0 {
 		out = append(out, seg{"nothing new", sSecondary})
+	}
+	return out
+}
+
+// reviewSegs says where the user stands as a reviewer: whether their
+// review is requested (from them or a team), then their latest review.
+func (m *Model) reviewSegs(it *model.Item) []seg {
+	r := it.Review
+	var out []seg
+	if r.Requested {
+		text := "requested from you"
+		if r.Team != "" {
+			text = "requested from " + r.Team
+		}
+		if r.Reviewed() {
+			text += " again"
+		}
+		out = append(out, seg{text, sNew + sBold})
+	}
+	ago := ""
+	if !r.At.IsZero() {
+		ago = " · " + human(m.now().Sub(r.At)) + " ago"
+	}
+	switch r.State {
+	case "approved":
+		out = append(out, seg{"you approved" + ago, sGreen})
+	case "changes_requested":
+		out = append(out, seg{"you requested changes" + ago, sRed})
+	case "commented":
+		out = append(out, seg{"you commented" + ago, sMuted})
+	case "dismissed":
+		out = append(out, seg{"your review was dismissed" + ago, sMuted})
+	case "pending":
+		out = append(out, seg{"your review is a draft, not submitted", sYellow})
+	case "":
+		if r.Requested {
+			out = append(out, seg{"not reviewed yet", sMuted})
+		}
+	default:
+		out = append(out, seg{"you reviewed (" + r.State + ")" + ago, sMuted})
 	}
 	return out
 }
