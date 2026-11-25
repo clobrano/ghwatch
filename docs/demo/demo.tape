@@ -41,12 +41,14 @@ Show
 Type "ghwatch" Sleep 400ms Enter
 Sleep 5.5s
 
-# Expand the thread and read it, down to the new comment. [~7s]
+# Expand the thread: the code it is about, then the comments. j/k move
+# a line, J/K jump to the next comment, down to the new one. [~7s]
 Type "k" Sleep 700ms
-Type "e" Sleep 1.5s
-Type "j" Sleep 500ms
-Type "j" Sleep 500ms
-Type "j" Sleep 2s
+Type "e" Sleep 2s
+Type "j" Sleep 400ms
+Type "j" Sleep 400ms
+Type "J" Sleep 900ms
+Type "J" Sleep 2s
 
 # The checks: e2e-aws-ovn fails and moves to the Failed group. [~12s]
 Type "v" Sleep 3.5s
@@ -66,8 +68,9 @@ Type "?" Sleep 2.5s
 Tab Sleep 3.5s
 Type "x" Sleep 1s
 
-# #131 moved up the queue [25s], and merges [34s].
-Sleep 4s
+# osac#58 was added because your review is requested: the review row
+# says so, and that you commented. #131 merges meanwhile [34s].
+Type "4" Sleep 4.5s
 Type "q" Sleep 500ms
 
 Hide

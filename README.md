@@ -4,7 +4,7 @@ Watch the CI of your GitHub pull requests from the terminal: one tab per PR,
 every check with its state, and a desktop notification when a job fails.
 Works with GitHub Actions and with external CI such as Prow / OpenShift CI.
 
-![ghwatch demo: a review comment arrives and its thread is read, a job fails, a PR goes through the merge queue and merges](docs/demo.gif)
+![ghwatch demo: a review comment arrives and its thread is read next to the code it is about, a job fails, a PR goes through the merge queue and merges, and a PR shows your review is requested](docs/demo.gif)
 
 ## Quick start
 
@@ -24,12 +24,18 @@ The keys you need day to day:
 | `j` / `k` | next / previous line (thread, job, or a line of a comment) |
 | `J` / `K` | next / previous comment, or group of jobs |
 | `v` | switch between the PR's comments and its checks |
+| `e` | expand a comment thread: the code it is about, then every comment |
 | `enter` | open the selected comment, or job, in the browser |
 | `r` / `R` | reply in a comment thread / resolve it |
 | `o` | open the PR in the browser |
 | `a` / `d` | add / remove a PR |
 | `?` | all the other keys, and (`tab`) what the icons mean |
 | `q` | quit |
+
+Above the lists, each PR has a row per topic, among them `CI` (jobs done, failing,
+running, and the commit they ran on), `comments` (new and unresolved),
+`review` (when your review is requested, and the review you last left),
+and `labels`.
 
 The footer always shows the main keys. [docs/tui.md](docs/tui.md) describes
 the screen in detail.
