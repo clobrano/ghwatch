@@ -183,7 +183,8 @@ const prSelection = `
       viewerLatestReview { state submittedAt }
       viewerLatestReviewRequest { requestedReviewer { __typename ... on Team { name } } }
       reviewThreads(last: 50) { nodes {
-        id isResolved isOutdated path line originalLine
+        id isResolved isOutdated path line originalLine startLine originalStartLine
+        hunk: comments(first: 1) { nodes { diffHunk } }
         comments(last: 5) { totalCount nodes { id author { login } bodyText createdAt url viewerDidAuthor } }
       } }
       commits(last: 1) { nodes { commit {
@@ -251,13 +252,22 @@ type prNode struct {
 	} `json:"viewerLatestReviewRequest"`
 	ReviewThreads struct {
 		Nodes []struct {
-			ID           string `json:"id"`
-			IsResolved   bool   `json:"isResolved"`
-			IsOutdated   bool   `json:"isOutdated"`
-			Path         string `json:"path"`
-			Line         *int   `json:"line"`
-			OriginalLine *int   `json:"originalLine"`
-			Comments     struct {
+			ID                string `json:"id"`
+			IsResolved        bool   `json:"isResolved"`
+			IsOutdated        bool   `json:"isOutdated"`
+			Path              string `json:"path"`
+			Line              *int   `json:"line"`
+			OriginalLine      *int   `json:"originalLine"`
+			StartLine         *int   `json:"startLine"`
+			OriginalStartLine *int   `json:"originalStartLine"`
+			// Hunk is the thread's first comment: its diff hunk is the
+			// code the discussion is about.
+			Hunk struct {
+				Nodes []struct {
+					DiffHunk string `json:"diffHunk"`
+				} `json:"nodes"`
+			} `json:"hunk"`
+			Comments struct {
 				TotalCount int           `json:"totalCount"`
 				Nodes      []commentNode `json:"nodes"`
 			} `json:"comments"`
@@ -413,6 +423,15 @@ func (p *prNode) threads() []model.Thread {
 			th.Line = *t.Line
 		case t.OriginalLine != nil:
 			th.Line = *t.OriginalLine
+		}
+		switch {
+		case t.StartLine != nil:
+			th.StartLine = *t.StartLine
+		case t.OriginalStartLine != nil:
+			th.StartLine = *t.OriginalStartLine
+		}
+		if len(t.Hunk.Nodes) > 0 {
+			th.Hunk = hunkTail(t.Hunk.Nodes[0].DiffHunk)
 		}
 		for _, c := range t.Comments.Nodes {
 			th.Comments = append(th.Comments, c.toComment())
@@ -574,4 +593,17 @@ func (Kind) Discover(ctx context.Context, gh *github.Client, reasons []string) (
 		}
 	}
 	return out, nil
+}
+
+// hunkLines is how much of a diff hunk is kept: the commented lines are
+// its last ones, and the lines before them give their context.
+const hunkLines = 12
+
+// hunkTail keeps the last hunkLines lines of a diff hunk.
+func hunkTail(hunk string) string {
+	lines := strings.Split(strings.TrimRight(strings.ReplaceAll(hunk, "\r\n", "\n"), "\n"), "\n")
+	if len(lines) > hunkLines {
+		lines = lines[len(lines)-hunkLines:]
+	}
+	return strings.Join(lines, "\n")
 }

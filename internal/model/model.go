@@ -272,9 +272,14 @@ const ConversationID = "conversation"
 // review summaries), or a review thread on a line of code.
 type Thread struct {
 	// ID is ConversationID or GitHub's ID of the review thread.
-	ID       string `json:"id"`
-	Path     string `json:"path,omitempty"`
-	Line     int    `json:"line,omitempty"`
+	ID   string `json:"id"`
+	Path string `json:"path,omitempty"`
+	Line int    `json:"line,omitempty"`
+	// StartLine is the first line of a comment on a range of lines.
+	StartLine int `json:"start_line,omitempty"`
+	// Hunk is the end of the diff the thread was started on: its last
+	// lines are the commented ones (Line, from StartLine).
+	Hunk     string `json:"hunk,omitempty"`
 	Resolved bool   `json:"resolved,omitempty"`
 	Outdated bool   `json:"outdated,omitempty"`
 	// Total is the number of comments in the thread; Comments holds only

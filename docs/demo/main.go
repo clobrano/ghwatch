@@ -6,7 +6,7 @@
 //   - #123: a reviewer replies in a code thread, jobs finish one by one,
 //     then e2e-aws-ovn fails;
 //   - #131: all green, enters the merge queue, moves up, and merges;
-//   - osac#58 and #140: settled.
+//   - osac#58: your review is requested; #140: merged.
 //
 // Run it with XDG_CONFIG_HOME, XDG_STATE_HOME and XDG_RUNTIME_DIR pointing
 // to a scratch directory, so it does not touch a real daemon or watchlist.
@@ -62,6 +62,25 @@ func main() {
 		log.Fatal(err)
 	}
 }
+
+// The code the #123 threads are about, as GitHub's diffHunk has it.
+const (
+	leaseHunk = "@@ -80,9 +80,11 @@ func (m *Manager) renew(ctx context.Context) error {\n" +
+		" \tlease, err := m.get(ctx)\n" +
+		" \tif err != nil {\n" +
+		" \t\treturn err\n" +
+		" \t}\n" +
+		"+\tm.mu.Lock()\n" +
+		"+\tdefer m.mu.Unlock()\n" +
+		" \tif lease.Expired(m.clock.Now()) {\n" +
+		"-\t\treturn m.acquire(ctx)\n" +
+		"+\t\treturn m.acquireLocked(ctx)"
+	testHunk = "@@ -8,4 +8,5 @@ import (\n" +
+		" \n" +
+		" func TestRenew(t *testing.T) {\n" +
+		"+\tt.Parallel()\n" +
+		" \tm := newManager(t)"
+)
 
 // story is a pull-request kind whose state follows a script over time.
 type story struct {
@@ -130,8 +149,9 @@ func (s *story) Fetch(_ context.Context, _ *github.Client, ids []string) ([]mode
 					comment("c1", "openshift-ci-robot", *ago(52 * time.Minute), "@clobrano: This pull request references NHC-412, a valid jira issue."),
 					comment("c2", "slintes", *ago(38 * time.Minute), "Approach looks right to me, waiting for CI."),
 				}},
-				{ID: "T1", Path: "pkg/lease/manager.go", Line: 88, Total: len(lease), URL: it.URL + "/files", Comments: lease},
-				{ID: "T2", Path: "pkg/lease/manager_test.go", Line: 12, Resolved: true, Total: 2, URL: it.URL + "/files", Comments: []model.Comment{
+				{ID: "T1", Path: "pkg/lease/manager.go", Line: 88, StartLine: 87, Total: len(lease), URL: it.URL + "/files", Comments: lease,
+					Hunk: leaseHunk},
+				{ID: "T2", Path: "pkg/lease/manager_test.go", Line: 12, Resolved: true, Total: 2, URL: it.URL + "/files", Hunk: testHunk, Comments: []model.Comment{
 					comment("s1", "slintes", *ago(40 * time.Minute), "nit: t.Parallel()"),
 					comment("s2", "clobrano", *ago(33 * time.Minute), "done"),
 				}},
@@ -164,6 +184,7 @@ func (s *story) Fetch(_ context.Context, _ *github.Client, ids []string) ([]mode
 		case 58:
 			it.Title, it.Branch, it.HeadSHA = "Add bare metal pool quota", "bm-quota", "d4e5f6a7b8c9"
 			it.Author, it.PushedAt = "danmanor", *ago(5 * time.Hour)
+			it.Review = model.MyReview{Requested: true, State: "commented", At: *ago(2 * time.Hour)}
 			it.Checks = []model.Check{
 				check("build", pr.SourceActions, model.Passed, 5*time.Hour, 4*time.Minute),
 				check("test", pr.SourceActions, model.Passed, 5*time.Hour, 9*time.Minute),

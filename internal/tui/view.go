@@ -731,12 +731,17 @@ func (m *Model) checksBody(w, rows int) []line {
 	return out
 }
 
+// scrollOff is how many rows of context the lists keep below and above
+// the selection, when there is room for them (like vim's scrolloff).
+const scrollOff = 3
+
 // groupedRows lays out a list whose entries are sorted by group: a header
 // row per non-empty group, then its entries, scrolled so the selected
 // entry is visible (with its group header when it is the first of its
 // group). An entry is its row and, when expanded, lines below it. Lines
 // from to to (-1: the last) of the selected entry are kept in view, as
-// far as they fit, from the first. topKey keeps the scroll position of
+// far as they fit, from the first, with scrollOff rows around them when
+// they fit too. topKey keeps the scroll position of
 // this list between frames. first and last are the rows those lines
 // land on, which may be outside the rows returned.
 func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int, header func(group, count int) line, entry func(i int) []line) (out []line, first, last int) {
@@ -780,11 +785,14 @@ func (m *Model) groupedRows(topKey string, groups []int, sel, from, to, rows int
 	if start > 0 && list[start-1].entry < 0 && list[start].line == 0 {
 		start--
 	}
-	if start < top {
-		top = start
+	// Keep a few rows of context around the selection, so the next line
+	// down (or up) shows before the cursor reaches it.
+	off := max(min(scrollOff, (rows-(selEnd-start+1))/2), 0)
+	if start-off < top {
+		top = start - off
 	}
-	if selEnd >= top+rows {
-		top = min(selEnd-rows+1, selRow)
+	if selEnd+off >= top+rows {
+		top = min(selEnd+off-rows+1, selRow)
 	}
 	top = max(min(top, len(list)-rows), 0)
 	m.top[topKey] = top

@@ -471,6 +471,9 @@ func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel cpos) 
 	if t.Path != "" { // the list shows the file; here is the whole path
 		out = append(out, line{gutter, {"   " + t.Name(), sSecondary}})
 	}
+	for _, l := range codeLines(t, w-8) {
+		out = append(out, append(line{gutter, {"   ", ""}}, l...))
+	}
 	if n := t.Total - len(t.Comments); n > 0 {
 		out = append(out, line{gutter, {"   ⋯ " + plural(n, "earlier comment") + " on GitHub", sSecondary}})
 	}
@@ -509,6 +512,42 @@ func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel cpos) 
 		spans = append(spans, [2]int{start, len(out) - 1})
 	}
 	return out, spans
+}
+
+// codeContext is how many lines before the commented ones are shown.
+const codeContext = 3
+
+// codeLines shows the code a review thread is about: the end of its diff
+// hunk, the commented lines (in bold) with codeContext lines before them,
+// colored like a diff and cut to w cells.
+func codeLines(t model.Thread, w int) []line {
+	if t.Hunk == "" {
+		return nil
+	}
+	lines := strings.Split(t.Hunk, "\n")
+	commented := 1
+	if t.StartLine > 0 && t.StartLine < t.Line {
+		commented = t.Line - t.StartLine + 1
+	}
+	from := max(len(lines)-commented-codeContext, 0)
+	var out []line
+	for i, l := range lines[from:] {
+		l = strings.ReplaceAll(l, "\t", "    ")
+		style := sMuted
+		switch {
+		case strings.HasPrefix(l, "@@"):
+			style = sSecondary
+		case strings.HasPrefix(l, "+"):
+			style = sGreen
+		case strings.HasPrefix(l, "-"):
+			style = sRed
+		}
+		if from+i >= len(lines)-commented {
+			style += sBold
+		}
+		out = append(out, line{{truncate(l, w), style}})
+	}
+	return out
 }
 
 // findThreads returns the current tab's comment threads (as displayed) and
