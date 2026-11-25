@@ -79,10 +79,15 @@ it. From top to bottom:
   Within a group, threads with a bell come first, then the conversation,
   then the most recently commented. `e` expands the selected thread:
   each of its comments shows below it in full, oldest first, with its
-  author, age and review state, and new ones marked `•`. While a thread
-  is expanded, `j`/`k` step through its comments, and `enter`, `Y` open
-  or copy the selected comment; folded, they move from thread to thread.
-  `e` again folds it.
+  author, age and review state, and new ones marked `•`. `j`/`k` move
+  one line at a time, through the comments' text too; `J`/`K` jump to
+  the next or previous comment's header (from inside a comment, `K` goes
+  to its own header first), and to the next thread once past the last
+  comment. The footer shows `J/K` while the cursor is in an expanded
+  thread. The cursor line is highlighted, and the comment it belongs to
+  has an accent bar in the gutter: `enter` and `Y` open or copy that
+  comment, `r`, `R` and `b` act on its thread. `e`, from any line of the
+  thread, folds it.
 - **Footer:** the main keys of the list shown (`h/l PR · j/k job · enter
   open · b bell · v comments · ? help`; in the comments list also
   `e expand · r reply`), and the connection to the daemon. On narrow
@@ -108,11 +113,11 @@ GitHub, and a commit status (such as Prow) opens its target URL.
 | `1`–`9` | jump to tab N |
 | `v` | switch between the checks and the comments |
 | `e` | expand the selected comment thread to all its comments, or fold it |
-| `J` / `K` | (comments) scroll the selected comment when it is taller than the list |
+| `J` / `K` | next / previous comment in an expanded thread (thread when folded); in the checks list, next / previous group |
 | `r` | (comments) reply in the selected thread; on the conversation, comment on the PR |
 | `R` | (comments) resolve or unresolve the selected thread; (checks) re-run failed CI |
 | `/` | find a job, or a thread by file, author or text (ignores case); `enter` selects it |
-| `j` / `k`, `gg` / `G` | move between jobs, threads, or the comments of an expanded thread |
+| `j` / `k`, `gg` / `G` | move one line: a job, a thread, or a line of an expanded thread's comments |
 | `enter` | open the selected job's page, or the selected comment (a thread's latest) |
 | `o` | open the PR page |
 | `y` | copy the PR's URL |
@@ -174,9 +179,8 @@ ghwatch fetches the last 20 overview comments and reviews, and the last
 50 review threads with their last 5 comments each, keeping up to 4,000
 characters of each comment. Counts of new comments are within those, and
 an expanded thread says how many earlier comments are only on GitHub:
-`enter` opens the thread there. A comment taller than the list is cut
-with a `↓ 14 more lines · J` line: `J` and `K` scroll it a line at a
-time, `j` and `k` still jump to the next or previous comment.
+`enter` opens the thread there. A comment taller than the list scrolls
+with the cursor, line by line; `J` skips to the next comment.
 
 ## Merge queue
 

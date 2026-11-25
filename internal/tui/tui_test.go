@@ -826,7 +826,7 @@ func TestFooterHints(t *testing.T) {
 	}
 	// The comments list has its own keys.
 	keys(m, "v")
-	want = "h/l PR · j/k thread · enter open · e expand · r reply · b bell · v checks · ? help"
+	want = "h/l PR · j/k line · enter open · e expand · r reply · b bell · v checks · ? help"
 	if wide := m.View(220, 16)[15]; !strings.Contains(wide, want) {
 		t.Errorf("wide footer, comments = %q", wide)
 	}
@@ -841,11 +841,11 @@ func TestFooterHints(t *testing.T) {
 	}
 	keys(m, "v")
 	// Very narrow: only "? help" is left.
-	if got := hintLine(10, viewChecks).plain(); got != "  ? help" {
+	if got := hintLine(10, viewChecks, false).plain(); got != "  ? help" {
 		t.Errorf("tiny footer = %q", got)
 	}
 	// Keys stand out in the accent.
-	if l := hintLine(200, viewChecks); l[1].style != sBold+sAccent || l[1].text != "h/l" {
+	if l := hintLine(200, viewChecks, false); l[1].style != sBold+sAccent || l[1].text != "h/l" {
 		t.Errorf("key style = %+v", l[1])
 	}
 }
@@ -976,63 +976,6 @@ func TestCommentsList(t *testing.T) {
 	keys(m, "v")
 	if !strings.HasPrefix(listRows(m.View(100, 20))[0], " Failed · 1") {
 		t.Error("v did not switch back to checks")
-	}
-}
-
-func TestExpandThread(t *testing.T) {
-	m, be := newModel()
-	s := withComments(snapshot())
-	th := &s.Items[0].Threads[1] // a.go:3
-	th.Total = 4                 // two older comments were not fetched
-	th.Comments[1].Body = "about r2\n\nsecond paragraph"
-	m.SetSnapshot(s)
-	keys(m, "e")
-	if !strings.Contains(m.View(100, 20)[19], "press v") {
-		t.Errorf("e in the checks list: footer %q", m.View(100, 20)[19])
-	}
-
-	// Folded, j goes from thread to thread.
-	keys(m, "v", "j")
-	if _, th, c := m.selectedComment(); th.ID != "T1" || c != nil {
-		t.Fatalf("selected %s / %v", th.ID, c)
-	}
-	keys(m, "e") // expand a.go:3
-	body := listRows(m.View(100, 24))
-	want := []string{" New · 2", " • conversation", "›• a.go:3 · 4 · 1 new", "   │   a.go:3", "   │   ⋯ 2 earlier comments on GitHub",
-		"   │   me · 2h00m ago", "   │     about r1", "   │ • alice · 10m ago", "   │     about r2", "   │", "   │     second paragraph", " Open · 1"}
-	for i, prefix := range want {
-		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
-			t.Errorf("row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
-		}
-	}
-
-	// Expanded, j steps through its comments, then on to the next thread.
-	keys(m, "j", "j")
-	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" {
-		t.Fatalf("two j from the thread selected %+v", c)
-	}
-	if body := listRows(m.View(100, 24)); !strings.HasPrefix(body[7], "   › • alice") || strings.HasPrefix(body[2], "›") {
-		t.Errorf("selected comment not marked:\n%s", strings.Join(body, "\n"))
-	}
-	keys(m, kEnter, "Y", "b")
-	if be.opened[len(be.opened)-1] != "u/r2" || be.copied[len(be.copied)-1] != "u/r2" {
-		t.Errorf("opened %v, copied %v", be.opened, be.copied)
-	}
-	if last := be.sent[len(be.sent)-1]; last.Op != ipc.OpThreadAlerts || last.Thread != "T1" {
-		t.Errorf("b on a comment sent %+v", last)
-	}
-	keys(m, "j")
-	if _, th, c := m.selectedComment(); th.ID != "T3" || c != nil {
-		t.Errorf("j past the last comment selected %s / %v", th.ID, c)
-	}
-
-	// e on a comment folds its thread and selects it.
-	keys(m, "k", "e")
-	if _, th, c := m.selectedComment(); th.ID != "T1" || c != nil {
-		t.Errorf("after folding, selected %s / %v", th.ID, c)
-	}
-	if body := listRows(m.View(100, 24)); strings.Contains(strings.Join(body, "\n"), "│") {
-		t.Errorf("folded thread still expanded:\n%s", strings.Join(body, "\n"))
 	}
 }
 
@@ -1201,58 +1144,6 @@ func TestResolve(t *testing.T) {
 	keys(m, "v", "R")
 	if m.confirmMsg != "Re-run the failed CI of org/repo#123?" {
 		t.Errorf("R in the checks list: %q", m.confirmMsg)
-	}
-}
-
-func TestScrollComment(t *testing.T) {
-	m, _ := newModel()
-	s := withComments(snapshot())
-	var long []string
-	for i := 1; i <= 30; i++ {
-		long = append(long, fmt.Sprintf("line %d", i))
-	}
-	s.Items[0].Threads[1].Comments[0].Body = strings.Join(long, "\n") // r1, by me
-	m.SetSnapshot(s)
-	keys(m, "v", "j", "e", "j") // a.go:3 expanded, its first comment selected
-	view := func() []string { return listRows(m.View(100, 20)) }
-	body := view()
-	n := len(body)
-	if !strings.HasPrefix(body[n-1], "   │     ↓ ") || !strings.HasSuffix(strings.TrimRight(body[n-1], " "), "more lines · J") {
-		t.Fatalf("no more-lines marker:\n%s", strings.Join(body, "\n"))
-	}
-
-	// J scrolls the comment; the lines above give way to a marker.
-	keys(m, "J", "J", "J")
-	body = view()
-	if !strings.HasPrefix(body[0], "   │     ↑ 3 lines above · K") || !strings.HasPrefix(body[1], "   │     line 3") {
-		t.Errorf("after 3 J:\n%s", strings.Join(body, "\n"))
-	}
-	if _, _, c := m.selectedComment(); c == nil || c.ID != "r1" {
-		t.Errorf("J moved the selection to %+v", c)
-	}
-	// Scrolling stops at the end of the comment.
-	for i := 0; i < 50; i++ {
-		keys(m, "J")
-	}
-	body = view()
-	joined := strings.Join(body, "\n")
-	if !strings.Contains(joined, "line 30") || strings.Contains(joined, "more line") {
-		t.Errorf("at the end:\n%s", joined)
-	}
-	keys(m, "K")
-	// The marker covers a line too: two are hidden below.
-	if !strings.Contains(strings.Join(view(), "\n"), "2 more lines · J") {
-		t.Errorf("after K:\n%s", strings.Join(view(), "\n"))
-	}
-	// j jumps to the next comment, which starts unscrolled.
-	keys(m, "j")
-	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" || m.cscroll != 0 {
-		t.Errorf("j selected %+v, scroll %d", c, m.cscroll)
-	}
-	// J on a thread row, or in the checks list, does nothing.
-	keys(m, "g", "g", "J")
-	if m.cscroll != 0 {
-		t.Errorf("J on a thread scrolled to %d", m.cscroll)
 	}
 }
 
@@ -1454,5 +1345,143 @@ func TestReviewRow(t *testing.T) {
 		if got := row(tc.r); got != tc.want {
 			t.Errorf("%+v: %q, want %q", tc.r, got, tc.want)
 		}
+	}
+}
+
+func TestExpandThread(t *testing.T) {
+	m, be := newModel()
+	s := withComments(snapshot())
+	th := &s.Items[0].Threads[1] // a.go:3: r1 (me, 1 line), r2 (alice, 3 lines)
+	th.Total = 4                 // two older comments were not fetched
+	th.Comments[1].Body = "about r2\n\nsecond paragraph"
+	m.SetSnapshot(s)
+	keys(m, "e")
+	if !strings.Contains(m.View(100, 20)[19], "press v") {
+		t.Errorf("e in the checks list: footer %q", m.View(100, 20)[19])
+	}
+	m.flash = "" // the test clock stands still: clear the message
+	view := func() []string { return listRows(m.View(100, 24)) }
+	at := func() string {
+		_, th, c := m.selectedComment()
+		ts := m.threads(m.current())
+		p := m.selPos(m.current(), ts)
+		if c == nil {
+			return th.ID
+		}
+		return fmt.Sprintf("%s/%d", c.ID, p.line)
+	}
+
+	// Folded, j goes from thread to thread; no J/K hint.
+	keys(m, "v", "j")
+	if at() != "T1" || strings.Contains(m.View(140, 24)[23], "J/K") {
+		t.Fatalf("at %s, footer %q", at(), m.View(140, 24)[23])
+	}
+	keys(m, "e") // expand a.go:3
+	body := view()
+	want := []string{" New · 2", " • conversation", "›• a.go:3 · 4 · 1 new", "   │   a.go:3", "   │   ⋯ 2 earlier comments on GitHub",
+		"   │   me · 2h00m ago", "   │     about r1", "   │ • alice · 10m ago", "   │     about r2", "   │", "   │     second paragraph", " Open · 1"}
+	for i, prefix := range want {
+		if i >= len(body) || !strings.HasPrefix(body[i], prefix) {
+			t.Errorf("row %d: want prefix %q in\n%s", i, prefix, strings.Join(body, "\n"))
+		}
+	}
+	// Inside the thread, the footer offers J/K.
+	if !strings.Contains(m.View(140, 24)[23], "J/K next/prev comment") {
+		t.Errorf("no J/K hint inside the thread: %q", m.View(140, 24)[23])
+	}
+
+	// j goes line by line: r1's header and text, then r2's.
+	var path []string
+	for i := 0; i < 6; i++ {
+		keys(m, "j")
+		path = append(path, at())
+	}
+	if got := strings.Join(path, " "); got != "r1/0 r1/1 r2/0 r2/1 r2/2 r2/3" {
+		t.Errorf("j went %s", got)
+	}
+	// The cursor line is marked, and its comment has the bar.
+	body = view()
+	if !strings.HasPrefix(body[10], "   ›     second paragraph") || !strings.HasPrefix(body[7], "   ┃ • alice") || !strings.HasPrefix(body[5], "   │   me") {
+		t.Errorf("cursor or bar:\n%s", strings.Join(body, "\n"))
+	}
+	// Keys act on the comment under the cursor, or its thread.
+	keys(m, kEnter, "Y", "b")
+	if be.opened[len(be.opened)-1] != "u/r2" || be.copied[len(be.copied)-1] != "u/r2" {
+		t.Errorf("opened %v, copied %v", be.opened, be.copied)
+	}
+	if last := be.sent[len(be.sent)-1]; last.Op != ipc.OpThreadAlerts || last.Thread != "T1" {
+		t.Errorf("b on a comment line sent %+v", last)
+	}
+
+	// K goes to the comment's header first, then the previous comment's;
+	// J goes header to header, then on to the next thread.
+	keys(m, "K")
+	if at() != "r2/0" {
+		t.Errorf("K from inside r2: %s", at())
+	}
+	keys(m, "K")
+	if at() != "r1/0" {
+		t.Errorf("K from r2's header: %s", at())
+	}
+	keys(m, "J", "J")
+	if at() != "T3" {
+		t.Errorf("J past the last comment: %s", at())
+	}
+	if strings.Contains(m.View(140, 24)[23], "J/K") {
+		t.Errorf("J/K hint outside a thread: %q", m.View(140, 24)[23])
+	}
+
+	// e from a comment line folds its thread and puts the cursor on it.
+	keys(m, "K", "j", "j", "e")
+	if at() != "T1" {
+		t.Errorf("after folding, at %s", at())
+	}
+	if body := view(); strings.Contains(strings.Join(body, "\n"), "│") {
+		t.Errorf("folded thread still expanded:\n%s", strings.Join(body, "\n"))
+	}
+}
+
+func TestLongComment(t *testing.T) {
+	m, _ := newModel()
+	s := withComments(snapshot())
+	var long []string
+	for i := 1; i <= 30; i++ {
+		long = append(long, fmt.Sprintf("line %d", i))
+	}
+	s.Items[0].Threads[1].Comments[0].Body = strings.Join(long, "\n")
+	m.SetSnapshot(s)
+	keys(m, "v", "j", "e", "j") // r1's header
+	for i := 0; i < 25; i++ {
+		keys(m, "j")
+	}
+	// The cursor is on "line 25": the list scrolled to keep it in view.
+	body := strings.Join(listRows(m.View(100, 20)), "\n")
+	if !strings.Contains(body, "   ›     line 25") || strings.Contains(body, "line 1\n") {
+		t.Errorf("cursor not in view:\n%s", body)
+	}
+	keys(m, "J") // to r2's header, past the rest of r1
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r2" {
+		t.Errorf("J landed on %+v", c)
+	}
+}
+
+func TestJumpGroups(t *testing.T) {
+	m, _ := newModel() // checks: Failed (1), Running (2), Passed (1)
+	name := func() string { _, c := m.selected(); return c.Name }
+	keys(m, "J")
+	if name() != "e2e-metal-ipi" {
+		t.Errorf("J to Running: %s", name())
+	}
+	keys(m, "j", "K") // tide, then the start of Running
+	if name() != "e2e-metal-ipi" {
+		t.Errorf("K to the start of the group: %s", name())
+	}
+	keys(m, "K")
+	if name() != "e2e-aws-ovn" {
+		t.Errorf("K to the previous group: %s", name())
+	}
+	keys(m, "J", "J", "J")
+	if name() != "lint" {
+		t.Errorf("J past the last group: %s", name())
 	}
 }

@@ -975,13 +975,13 @@ var helpSections = []helpSection{
 	{"Navigation", []helpEntry{
 		{"h / l, gT / gt", "previous / next tab", ""},
 		{"1 – 9", "jump to tab N", ""},
-		{"j / k, gg / G", "move between jobs or threads", ""},
+		{"j / k, gg / G", "move a job, or a line in comments", ""},
+		{"J / K", "next / prev comment, or job group", ""},
 		{"v", "switch comments / checks", ""},
 		{"/", "find a job or thread", ""},
 	}},
 	{"Comments", []helpEntry{
 		{"e", "expand / fold a thread", ""},
-		{"J / K", "scroll a long comment", ""},
 		{"r", "reply, or comment on the PR", ""},
 		{"R", "resolve / unresolve a thread", ""},
 	}},
@@ -1160,7 +1160,7 @@ func (m *Model) footer(w int) line {
 	case m.snap != nil && m.snap.Stale && m.snap.Error != "":
 		left = line{{"  ! " + m.snap.Error, sYellow}}
 	default:
-		left = hintLine(w-right.width()-1, m.view)
+		left = hintLine(w-right.width()-1, m.view, m.view == viewComments && m.inThread())
 	}
 	return spread(left, right, w)
 }
@@ -1172,20 +1172,23 @@ func (m *Model) footer(w int) line {
 var footerHints = []struct {
 	key, label, comments string
 	drop                 int
+	// inThread: shown only while the cursor is inside an expanded thread.
+	inThread bool
 }{
-	{"h/l", "PR", "", 2},
-	{"j/k", "job", "thread", 3},
-	{"enter", "open", "", 1},
-	{"e", "", "expand", 6}, // comments only
-	{"r", "", "reply", 7},
-	{"b", "bell", "", 5},
-	{"v", "comments", "checks", 4},
-	{"?", "help", "", 0},
+	{"h/l", "PR", "", 2, false},
+	{"j/k", "job", "line", 3, false},
+	{"J/K", "", "next/prev comment", 4, true},
+	{"enter", "open", "", 1, false},
+	{"e", "", "expand", 7, false}, // comments only
+	{"r", "", "reply", 8, false},
+	{"b", "bell", "", 6, false},
+	{"v", "comments", "checks", 5, false},
+	{"?", "help", "", 0, false},
 }
 
 // hintLine renders as many footer hints as fit in w cells, for the list
 // shown: keys in the accent, what they do in grey.
-func hintLine(w, view int) line {
+func hintLine(w, view int, inThread bool) line {
 	keep := make([]bool, len(footerHints))
 	for i := range keep {
 		keep[i] = true
@@ -1194,7 +1197,7 @@ func hintLine(w, view int) line {
 		l := line{{"  ", ""}}
 		first := true
 		for i, h := range footerHints {
-			if !keep[i] || h.label == "" && view != viewComments {
+			if !keep[i] || h.label == "" && view != viewComments || h.inThread && !inThread {
 				continue
 			}
 			if !first {
