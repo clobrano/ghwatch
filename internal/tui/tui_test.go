@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1401,8 +1402,21 @@ func TestExpandThread(t *testing.T) {
 	}
 	// The cursor line is marked, and its comment has the bar.
 	body = view()
-	if !strings.HasPrefix(body[10], "   ›     second paragraph") || !strings.HasPrefix(body[7], "   ┃ • alice") || !strings.HasPrefix(body[5], "   │   me") {
+	row := func(prefix string) int {
+		for i, l := range body {
+			if strings.HasPrefix(l, prefix) {
+				return i
+			}
+		}
+		return -1
+	}
+	cur, bar, other := row("   ›     second paragraph"), row("   ┃ • alice"), row("   │   me")
+	if cur < 0 || bar < 0 || other < 0 || bar > cur || other > bar {
 		t.Errorf("cursor or bar:\n%s", strings.Join(body, "\n"))
+	}
+	// The rows below the cursor stay in view: the next threads show.
+	if cur+scrollOff >= len(body) || !strings.HasPrefix(body[cur+1], " Open · 1") {
+		t.Errorf("no context below the cursor:\n%s", strings.Join(body, "\n"))
 	}
 	// Keys act on the comment under the cursor, or its thread.
 	keys(m, kEnter, "Y", "b")
@@ -1537,5 +1551,43 @@ func TestExpandedThreadShowsCode(t *testing.T) {
 	keys(m, "j")
 	if _, _, c := m.selectedComment(); c == nil || c.ID != "r1" {
 		t.Errorf("j from the thread row: %+v", c)
+	}
+}
+
+// TestScrollOff checks that a list keeps scrollOff rows of context below
+// and above the selection while it scrolls, and none past its ends.
+func TestScrollOff(t *testing.T) {
+	m := &Model{top: map[string]int{}}
+	groups := make([]int, 30) // one group: a header row, then 30 entries
+	const rows = 10
+	layout := func(sel int) []string {
+		out, first, _ := m.groupedRows("k", groups, sel, 0, -1, rows,
+			func(g, n int) line { return line{{"header", ""}} },
+			func(i int) []line { return []line{{{fmt.Sprintf("e%d", i), ""}}} })
+		var s []string
+		for _, l := range out {
+			s = append(s, l[0].text)
+		}
+		if s[first] != fmt.Sprintf("e%d", sel) {
+			t.Fatalf("selection %d lands on %q", sel, s[first])
+		}
+		return s
+	}
+	// Going down, the selection stops scrollOff rows above the bottom.
+	for sel := 0; sel < 20; sel++ {
+		s := layout(sel)
+		if want := fmt.Sprintf("e%d", sel+scrollOff); sel+scrollOff < 30 && !slices.Contains(s, want) {
+			t.Fatalf("down at %d: %s not in view %v", sel, want, s)
+		}
+	}
+	// Going back up, it keeps scrollOff rows above.
+	for sel := 19; sel >= scrollOff; sel-- {
+		if s, want := layout(sel), fmt.Sprintf("e%d", sel-scrollOff); !slices.Contains(s, want) {
+			t.Fatalf("up at %d: %s not in view %v", sel, want, s)
+		}
+	}
+	// At the end, the last entry sits on the last row.
+	if s := layout(29); s[rows-1] != "e29" {
+		t.Errorf("at the end: %v", s)
 	}
 }

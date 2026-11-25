@@ -184,7 +184,10 @@ thread is about, keeping up to 4,000
 characters of each comment. Counts of new comments are within those, and
 an expanded thread says how many earlier comments are only on GitHub:
 `enter` opens the thread there. A comment taller than the list scrolls
-with the cursor, line by line; `J` skips to the next comment.
+with the cursor, line by line; `J` skips to the next comment. Both lists
+keep three rows of context below and above the cursor while they scroll
+(fewer on a short screen), so you see what comes next, the rest of the
+comment or the next thread, before you get there.
 
 ## Merge queue
 
