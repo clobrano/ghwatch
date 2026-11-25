@@ -96,64 +96,78 @@ func (m *Model) threads(it *model.Item) []model.Thread {
 	return out
 }
 
-// cpos is a selectable row of the comments list: a thread, or one of the
-// comments of an expanded thread.
+// cpos is a line the cursor can be on in the comments list: a thread's
+// row, or a line of one of the comments of an expanded thread (its
+// header, then the lines of its text).
 type cpos struct {
 	thread  int // index in the displayed threads
 	comment int // index in the thread's comments; -1 for the thread's row
+	line    int // line in the comment: 0 is its header, then its text
 }
+
+// head reports whether p starts a thread or a comment: where J/K land.
+func (p cpos) head() bool { return p.line == 0 }
 
 func (m *Model) isExpanded(it *model.Item, t model.Thread) bool {
 	return m.expanded[it.ID+"\x00"+t.ID]
 }
 
-// positions lists the selectable rows of the comments list, in order.
+// bodyWidth is the width comment text wraps to in a w-wide list.
+func bodyWidth(w int) int { return w - 9 }
+
+// positions lists the cursor's lines in the comments list, in order. The
+// lines of comment text follow the width the list was last drawn at.
 func (m *Model) positions(it *model.Item, ts []model.Thread) []cpos {
+	w := m.listW
+	if w == 0 {
+		w = 80
+	}
 	var out []cpos
 	for i, t := range ts {
-		out = append(out, cpos{i, -1})
-		if m.isExpanded(it, t) {
-			for j := range t.Comments {
-				out = append(out, cpos{i, j})
+		out = append(out, cpos{i, -1, 0})
+		if !m.isExpanded(it, t) {
+			continue
+		}
+		for j, c := range t.Comments {
+			n := len(wrap(c.Body, bodyWidth(w)))
+			for l := 0; l <= n; l++ {
+				out = append(out, cpos{i, j, l})
 			}
 		}
 	}
 	return out
 }
 
-// posKey identifies a row across refreshes: its thread's ID, plus the
-// comment's ID for a comment.
+// posKey identifies a line across refreshes: its thread's ID, plus the
+// comment's ID and the line in it for a comment.
 func posKey(ts []model.Thread, p cpos) string {
 	if p.comment < 0 {
 		return ts[p.thread].ID
 	}
-	return ts[p.thread].ID + "\x00" + ts[p.thread].Comments[p.comment].ID
+	return ts[p.thread].ID + "\x00" + ts[p.thread].Comments[p.comment].ID + "\x00" + strconv.Itoa(p.line)
 }
 
-// selPos returns the selected row of the comments list. A selected
-// comment that is gone, or whose thread was folded, falls back to its
-// thread.
+// selPos returns the cursor's line in the comments list. When that line
+// is gone (a shorter comment, a folded thread), the cursor falls back to
+// the comment's header, then to its thread.
 func (m *Model) selPos(it *model.Item, ts []model.Thread) cpos {
 	ps := m.positions(it, ts)
 	s := m.csel[it.ID]
 	if s.key != "" {
-		for _, p := range ps {
-			if posKey(ts, p) == s.key {
-				return p
-			}
-		}
-		thread, _, _ := strings.Cut(s.key, "\x00")
-		for _, p := range ps {
-			if p.comment < 0 && ts[p.thread].ID == thread {
-				return p
+		parts := strings.SplitN(s.key, "\x00", 3)
+		for _, want := range []string{s.key, strings.Join(parts[:min(2, len(parts))], "\x00") + "\x000", parts[0]} {
+			for _, p := range ps {
+				if posKey(ts, p) == want {
+					return p
+				}
 			}
 		}
 	}
 	return ps[min(max(s.idx, 0), len(ps)-1)]
 }
 
-// selectedComment returns the selected thread, and the selected comment
-// when a comment of an expanded thread is selected rather than the thread.
+// selectedComment returns the cursor's thread, and the comment its line
+// belongs to, if any: what enter, Y and r act on.
 func (m *Model) selectedComment() (*model.Item, *model.Thread, *model.Comment) {
 	it := m.current()
 	if it == nil {
@@ -176,8 +190,15 @@ func (m *Model) selectedThread() (*model.Item, *model.Thread) {
 	return it, t
 }
 
-// selectedLink is where enter and Y go: the selected comment, or the
-// selected thread's latest.
+// inThread reports whether the cursor is inside an expanded thread:
+// on its row or one of its comments. J/K then go comment by comment.
+func (m *Model) inThread() bool {
+	it, t := m.selectedThread()
+	return t != nil && m.isExpanded(it, *t)
+}
+
+// selectedLink is where enter and Y go: the comment under the cursor, or
+// the thread's latest.
 func (m *Model) selectedLink() string {
 	_, t, c := m.selectedComment()
 	switch {
@@ -189,7 +210,8 @@ func (m *Model) selectedLink() string {
 	return ""
 }
 
-// selectThread selects the thread with index i in the displayed list.
+// selectThread puts the cursor on the row of the thread with index i in
+// the displayed list.
 func (m *Model) selectThread(it *model.Item, ts []model.Thread, i int) {
 	ps := m.positions(it, ts)
 	for n, p := range ps {
@@ -200,9 +222,10 @@ func (m *Model) selectThread(it *model.Item, ts []model.Thread, i int) {
 	}
 }
 
-// moveThread moves the selection by delta rows: from thread to thread,
-// through the comments of expanded threads.
-func (m *Model) moveThread(delta int) {
+// moveThread moves the cursor by delta lines: thread rows, and inside an
+// expanded thread each line of its comments. With heads, it moves by
+// heads instead: thread rows and comment headers (J/K).
+func (m *Model) moveThread(delta int, heads bool) {
 	it := m.current()
 	if it == nil {
 		return
@@ -219,9 +242,26 @@ func (m *Model) moveThread(delta int) {
 			i = n
 		}
 	}
-	i = min(max(i+delta, 0), len(ps)-1)
+	switch {
+	case !heads:
+		i = min(max(i+delta, 0), len(ps)-1)
+	case delta > 0:
+		for j := i + 1; j < len(ps); j++ {
+			if ps[j].head() {
+				i = j
+				break
+			}
+		}
+	default:
+		// Inside a comment, K goes to its header first.
+		for j := i - 1; j >= 0; j-- {
+			if ps[j].head() {
+				i = j
+				break
+			}
+		}
+	}
 	m.csel[it.ID] = selection{key: posKey(ts, ps[i]), idx: i}
-	m.cscroll = 0 // the next comment starts at its top
 }
 
 // markRead tells the daemon the user saw the active PR's comments: any
@@ -260,36 +300,29 @@ func (m *Model) commentsBody(w, rows int) []line {
 	for i, t := range ts {
 		groups[i] = threadGroup(t, readAt)
 	}
+	m.listW = w
 	p := m.selPos(it, ts)
 	names := threadNames(ts)
-	// The selected thread stays in view with as much of its comments as
-	// fits; a selected comment stays in view whole, as far as it fits.
-	from, to := 0, -1
 	expand := func(i int) ([]line, [][2]int) {
 		if !m.isExpanded(it, ts[i]) {
 			return nil, nil
 		}
-		sel := -1
+		sel := cpos{-1, -1, 0}
 		if i == p.thread {
-			sel = p.comment
+			sel = p
 		}
 		return m.commentLines(ts[i], w, readAt, sel)
 	}
-	// A selected comment taller than the list scrolls with J/K: the
-	// lines above the scroll position give way to a marker saying so.
-	scroll, height := 0, 0
+	// The thread row under the cursor stays in view with as much of its
+	// comments as fits; a comment line under the cursor stays in view.
+	from, to := 0, -1
 	if p.comment >= 0 {
 		_, spans := expand(p.thread)
-		from, to = 1+spans[p.comment][0], 1+spans[p.comment][1]
-		height = to - from + 1
-		scroll = min(m.commentScroll(posKey(ts, p)), max(height-rows+1, 0))
-		m.cscroll = scroll
-		if scroll > 0 {
-			from += scroll - 1
-		}
+		from = 1 + spans[p.comment][0] + p.line
+		to = from
 	}
 	groupStyle := [...]string{sNew, sAccent, sSecondary}
-	out, first, last := m.groupedRows("c\x00"+it.ID, groups, p.thread, from, to, rows,
+	out, _, _ := m.groupedRows("c\x00"+it.ID, groups, p.thread, from, to, rows,
 		func(g, n int) line {
 			return line{{" " + threadGroupNames[g], groupStyle[g] + sBold}, {" · " + strconv.Itoa(n), sSecondary}}
 		},
@@ -297,38 +330,7 @@ func (m *Model) commentsBody(w, rows int) []line {
 			lines, _ := expand(i)
 			return append([]line{m.threadRow(it, ts[i], names[ts[i].ID], i == p.thread && p.comment < 0, w, readAt)}, lines...)
 		})
-	if p.comment >= 0 && len(out) > 0 {
-		mark := func(text string) line {
-			return line{{"   │", sBorder}, {"     " + text, sSecondary}}
-		}
-		if scroll > 0 && first >= 0 && first < len(out) {
-			out[first] = mark("↑ " + plural(scroll, "line") + " above · K")
-		}
-		if last >= len(out) {
-			out[len(out)-1] = mark("↓ " + plural(last-len(out)+2, "more line") + " · J")
-		}
-	}
 	return out
-}
-
-// commentScroll is how many lines of the selected comment are scrolled
-// past: 0 once another row is selected.
-func (m *Model) commentScroll(key string) int {
-	if m.cscrollKey != key {
-		m.cscrollKey, m.cscroll = key, 0
-	}
-	return m.cscroll
-}
-
-// scrollComment scrolls the selected comment by delta lines; the list
-// clamps it to the comment's length when drawn.
-func (m *Model) scrollComment(delta int) {
-	_, t, c := m.selectedComment()
-	if c == nil {
-		return
-	}
-	m.commentScroll(t.ID + "\x00" + c.ID)
-	m.cscroll = max(m.cscroll+delta, 0)
 }
 
 // Comment list columns: marker, icon, thread, time, author.
@@ -460,10 +462,11 @@ func (m *Model) toggleThread() {
 
 // commentLines are the lines of an expanded thread, oldest comment
 // first: for each, a line with its author, age and review state, then its
-// text, wrapped. New comments carry the new mark, and the selected one
-// (sel, or -1) is highlighted. spans gives each comment's first and last
-// line.
-func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel int) (out []line, spans [][2]int) {
+// text, wrapped. New comments carry the new mark. When the cursor is in
+// the thread (sel), its line is highlighted and the comment it belongs
+// to gets an accent bar in the gutter: what enter, Y and r act on. spans
+// gives each comment's first and last line.
+func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel cpos) (out []line, spans [][2]int) {
 	gutter := seg{"   │", sBorder}
 	if t.Path != "" { // the list shows the file; here is the whole path
 		out = append(out, line{gutter, {"   " + t.Name(), sSecondary}})
@@ -473,6 +476,10 @@ func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel int) (
 	}
 	for i, c := range t.Comments {
 		start := len(out)
+		g := gutter
+		if i == sel.comment {
+			g = seg{"   ┃", sAccent + sBold}
+		}
 		mark := seg{"   ", ""}
 		if c.Counts() && c.CreatedAt.After(readAt) {
 			mark = seg{" " + unseenMark + " ", sBold + sNew}
@@ -481,21 +488,24 @@ func (m *Model) commentLines(t model.Thread, w int, readAt time.Time, sel int) (
 		if c.Mine {
 			who.style = sMuted + sBold
 		}
-		head := line{gutter, mark, who, {" · " + human(m.now().Sub(c.CreatedAt)) + " ago", sSecondary}}
+		head := line{g, mark, who, {" · " + human(m.now().Sub(c.CreatedAt)) + " ago", sSecondary}}
 		if c.Review != "" && c.Review != "commented" {
 			head = append(head, seg{" · " + strings.ReplaceAll(c.Review, "_", " "), sAccent})
 		}
-		if i == sel {
+		lines := []line{head}
+		for _, l := range wrap(c.Body, bodyWidth(w)) {
+			lines = append(lines, line{g, {"     " + l, sText}})
+		}
+		if i == sel.comment && sel.line < len(lines) {
+			cur := lines[sel.line]
 			if m.Color {
-				head = withStyle(fill(head, w, ""), bgSelect+sBold)
+				cur = withStyle(fill(cur, w, ""), bgSelect+sBold)
 			} else {
-				head[0] = seg{"   ›", ""}
+				cur = append(line{{"   ›", ""}}, cur[1:]...)
 			}
+			lines[sel.line] = cur
 		}
-		out = append(out, head)
-		for _, l := range wrap(c.Body, w-9) {
-			out = append(out, line{gutter, {"     " + l, sText}})
-		}
+		out = append(out, lines...)
 		spans = append(spans, [2]int{start, len(out) - 1})
 	}
 	return out, spans

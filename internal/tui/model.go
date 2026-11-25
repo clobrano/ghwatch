@@ -86,10 +86,9 @@ type Model struct {
 	// drafts holds replies not posted yet, by item ID, NUL, thread ID: a
 	// declined or failed reply reopens with its text.
 	drafts map[string]string
-	// cscroll is how far the selected comment, cscrollKey, is scrolled
-	// with J/K, in lines.
-	cscroll    int
-	cscrollKey string
+	// listW is the width the comments list was last drawn at: comment
+	// text wraps, and the cursor moves, by its lines.
+	listW int
 	// noticeAt is when the daemon's last notice shown was made.
 	noticeAt time.Time
 	// helpPage is the help panel's page: 0 keys, 1 legend.
@@ -333,10 +332,47 @@ func (m *Model) moveCheck(delta int) {
 // move moves the selection in the list shown.
 func (m *Model) move(delta int) {
 	if m.view == viewComments {
-		m.moveThread(delta)
+		m.moveThread(delta, false)
 	} else {
 		m.moveCheck(delta)
 	}
+}
+
+// moveGroup moves the selection to the first job of the next group, or
+// (delta < 0) to the first job of its group, then of the previous one.
+func (m *Model) moveGroup(delta int) {
+	it := m.current()
+	if it == nil {
+		return
+	}
+	checks := m.listed(it)
+	if len(checks) == 0 {
+		return
+	}
+	i := m.selIndex(it.ID, checks)
+	g := checkGroup(checks[i].State)
+	switch {
+	case delta > 0:
+		for j := i + 1; j < len(checks); j++ {
+			if checkGroup(checks[j].State) != g {
+				i = j
+				break
+			}
+		}
+	default:
+		start := i
+		for start > 0 && checkGroup(checks[start-1].State) == g {
+			start--
+		}
+		if start == i && start > 0 { // already first: the previous group
+			start--
+			for start > 0 && checkGroup(checks[start-1].State) == checkGroup(checks[i-1].State) {
+				start--
+			}
+		}
+		i = start
+	}
+	m.sel[it.ID] = selection{key: checks[i].Key(), idx: i}
 }
 
 func (m *Model) send(cmd ipc.Command) {
@@ -420,12 +456,16 @@ func (m *Model) keyNormal(k string) {
 	case "v":
 		m.view = 1 - m.view
 	case "J", "K":
+		// Bigger jumps: comment by comment (thread by thread when
+		// folded), or group by group in the checks list.
+		delta := 1
+		if k == "K" {
+			delta = -1
+		}
 		if m.view == viewComments {
-			if k == "J" {
-				m.scrollComment(1)
-			} else {
-				m.scrollComment(-1)
-			}
+			m.moveThread(delta, true)
+		} else {
+			m.moveGroup(delta)
 		}
 	case "e":
 		if m.view == viewComments {

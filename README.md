@@ -21,7 +21,8 @@ The keys you need day to day:
 | Key | Action |
 | --- | --- |
 | `h` / `l` | previous / next PR |
-| `j` / `k` | next / previous thread or job |
+| `j` / `k` | next / previous line (thread, job, or a line of a comment) |
+| `J` / `K` | next / previous comment, or group of jobs |
 | `v` | switch between the PR's comments and its checks |
 | `enter` | open the selected comment, or job, in the browser |
 | `r` / `R` | reply in a comment thread / resolve it |
