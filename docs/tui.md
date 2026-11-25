@@ -79,7 +79,10 @@ it. From top to bottom:
   Within a group, threads with a bell come first, then the conversation,
   then the most recently commented. `e` expands the selected thread:
   each of its comments shows below it in full, oldest first, with its
-  author, age and review state, and new ones marked `•`. `j`/`k` move
+  author, age and review state, and new ones marked `•`. A thread on
+  code first shows the code it is about, as the diff it was written on:
+  the commented line (or lines, for a comment on a range) in bold, with
+  three lines before it, `+` lines green and `-` lines red. `j`/`k` move
   one line at a time, through the comments' text too; `J`/`K` jump to
   the next or previous comment's header (from inside a comment, `K` goes
   to its own header first), and to the next thread once past the last
@@ -176,7 +179,8 @@ Actions jobs.
 Both post as your `gh` login (or `$GITHUB_TOKEN`), through the daemon.
 
 ghwatch fetches the last 20 overview comments and reviews, and the last
-50 review threads with their last 5 comments each, keeping up to 4,000
+50 review threads with their last 5 comments each and the code the
+thread is about, keeping up to 4,000
 characters of each comment. Counts of new comments are within those, and
 an expanded thread says how many earlier comments are only on GitHub:
 `enter` opens the thread there. A comment taller than the list scrolls

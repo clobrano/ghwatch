@@ -60,6 +60,8 @@ changing the meaning of a field bumps `schema`.
       "id": "conversation",    // "conversation", or GitHub's review thread ID
       "path": "pkg/foo.go",    // review threads only
       "line": 42,              // review threads only, when known
+      "start_line": 40,        // first line of a comment on a range (omitted otherwise)
+      "hunk": "@@ … @@\n …",   // end of the diff the thread was started on (last 12 lines); its last lines are the commented ones
       "resolved": false,       // omitted when false
       "outdated": false,       // omitted when false
       "total": 12,             // comments in the thread

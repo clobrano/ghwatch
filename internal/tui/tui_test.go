@@ -1485,3 +1485,57 @@ func TestJumpGroups(t *testing.T) {
 		t.Errorf("J past the last group: %s", name())
 	}
 }
+
+func TestCodeLines(t *testing.T) {
+	hunk := "@@ -10,6 +10,7 @@ func renew() {\n \tmu.Lock()\n \tdefer mu.Unlock()\n-\tif expired() {\n+\tif expired(now) {\n+\t\treturn errExpired\n \t}"
+	plain := func(ls []line) []string {
+		var out []string
+		for _, l := range ls {
+			out = append(out, l.plain())
+		}
+		return out
+	}
+	// One commented line: it, and three lines before it.
+	got := plain(codeLines(model.Thread{Line: 13, Hunk: hunk}, 80))
+	want := []string{"-    if expired() {", "+    if expired(now) {", "+        return errExpired", "     }"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("one line:\n%s", strings.Join(got, "\n"))
+	}
+	// A range: all its lines, and three before.
+	got = plain(codeLines(model.Thread{StartLine: 11, Line: 13, Hunk: hunk}, 80))
+	if len(got) != 6 || got[0] != "     mu.Lock()" {
+		t.Errorf("range:\n%s", strings.Join(got, "\n"))
+	}
+	// Cut to the width; nothing without a hunk.
+	if got := plain(codeLines(model.Thread{Line: 13, Hunk: hunk}, 10)); got[1] != "+    if e…" {
+		t.Errorf("cut: %q", got[1])
+	}
+	if codeLines(model.Thread{Line: 3}, 80) != nil {
+		t.Error("lines without a hunk")
+	}
+	// The commented line is bold, the context is not.
+	m := codeLines(model.Thread{Line: 13, Hunk: hunk}, 80)
+	if !strings.Contains(m[3][0].style, sBold) || strings.Contains(m[0][0].style, sBold) {
+		t.Errorf("styles: %q / %q", m[0][0].style, m[3][0].style)
+	}
+}
+
+func TestExpandedThreadShowsCode(t *testing.T) {
+	m, _ := newModel()
+	s := withComments(snapshot())
+	s.Items[0].Threads[1].Hunk = "@@ -1,2 +1,2 @@\n context\n+the commented line"
+	m.SetSnapshot(s)
+	keys(m, "v", "j", "e")
+	body := listRows(m.View(100, 24))
+	want := []string{"   │   a.go:3", "   │   @@ -1,2 +1,2 @@", "   │    context", "   │   +the commented line", "   │   me · "}
+	for i, prefix := range want {
+		if 3+i >= len(body) || !strings.HasPrefix(body[3+i], prefix) {
+			t.Errorf("row %d: want prefix %q in\n%s", 3+i, prefix, strings.Join(body, "\n"))
+		}
+	}
+	// The code is not a cursor stop: j goes to the first comment.
+	keys(m, "j")
+	if _, _, c := m.selectedComment(); c == nil || c.ID != "r1" {
+		t.Errorf("j from the thread row: %+v", c)
+	}
+}

@@ -3,6 +3,7 @@ package pr
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -479,5 +480,31 @@ func TestViewerReview(t *testing.T) {
 	}
 	if !strings.Contains(prSelection, "viewerLatestReview { state submittedAt }") || !strings.Contains(prSelection, "viewerLatestReviewRequest") {
 		t.Error("the query does not ask for the viewer's review")
+	}
+}
+
+func TestThreadHunk(t *testing.T) {
+	var hunk []string
+	hunk = append(hunk, "@@ -1,20 +1,21 @@")
+	for i := 1; i <= 20; i++ {
+		hunk = append(hunk, fmt.Sprintf(" line %d", i))
+	}
+	js, _ := json.Marshal(map[string]any{"number": 1, "state": "OPEN", "headRefOid": "a",
+		"reviewThreads": map[string]any{"nodes": []any{map[string]any{
+			"id": "T1", "path": "a.go", "line": 20, "startLine": 18,
+			"hunk":     map[string]any{"nodes": []any{map[string]any{"diffHunk": strings.Join(hunk, "\r\n")}}},
+			"comments": map[string]any{"totalCount": 0, "nodes": []any{}},
+		}}}})
+	var p prNode
+	if err := json.Unmarshal(js, &p); err != nil {
+		t.Fatal(err)
+	}
+	th := p.toItem("pr:o/r#1", "o/r").Threads[1]
+	lines := strings.Split(th.Hunk, "\n")
+	if th.StartLine != 18 || th.Line != 20 || len(lines) != hunkLines || lines[len(lines)-1] != " line 20" || strings.Contains(th.Hunk, "\r") {
+		t.Errorf("thread = start %d, line %d, hunk %q", th.StartLine, th.Line, th.Hunk)
+	}
+	if !strings.Contains(prSelection, "hunk: comments(first: 1) { nodes { diffHunk } }") {
+		t.Error("the query does not ask for the thread's hunk")
 	}
 }
